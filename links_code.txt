@@ -1,0 +1,158 @@
+#        elif key == "numbersign":
+
+
+
+
+
+
+
+import re, os, webbrowser
+
+def open_links_dialog():
+    global links_popup, overlay_frame
+
+    content = editor.get("1.0", "end-1c")
+
+    # Detect URLs
+    url_pattern = r'(https?://[^\s]+|www\.[^\s]+)'
+    urls = re.findall(url_pattern, content)
+
+    # Detect _Note Name_ style links (underscores allowed, require boundaries)
+    note_pattern = r'(?<!\w)_(.+?)_(?!\w)'
+    notes = re.findall(note_pattern, content)
+
+    # --- Overlay for click-outside detection ---
+    overlay_frame = tk.Toplevel(window)
+    overlay_frame.overrideredirect(True)
+    overlay_frame.attributes("-alpha", 0.0)  # fully transparent
+    overlay_frame.geometry(f"{window.winfo_width()}x{window.winfo_height()}+{window.winfo_rootx()}+{window.winfo_rooty()}")
+    overlay_frame.lift()
+    overlay_frame.bind("<Button-1>", lambda e: close_popup())
+    overlay_frame.focus_force()
+
+    # --- Popup itself ---
+    links_popup = tk.Toplevel(window)
+    links_popup.configure(bg="black", bd=1, highlightthickness=1, highlightbackground="gray")
+    links_popup.overrideredirect(True)
+    links_popup.transient(window)
+    links_popup.lift()
+    links_popup.grab_set()
+
+    # Center popup
+    win_x, win_y = window.winfo_rootx(), window.winfo_rooty()
+    win_w, win_h = window.winfo_width(), window.winfo_height()
+    width, height = 500, 300
+    x, y = win_x + (win_w - width)//2, win_y + (win_h - height)//2
+    links_popup.geometry(f"{width}x{height}+{x}+{y}")
+
+    container = tk.Frame(links_popup, bg="black")
+    container.pack(fill="both", expand=True, padx=4, pady=4)
+
+    tk.Label(container, text="Detected Links:", bg="black", fg="white",
+             font=("Courier", 11, "bold"), anchor="w").pack(anchor="w", pady=(0, 4))
+
+    listbox = tk.Listbox(
+        container, bg="black", fg="white", selectbackground="#333",
+        selectforeground="white", relief="flat", highlightthickness=1,
+        highlightbackground="gray", activestyle="none", font=("Courier", 10)
+    )
+    listbox.pack(fill="both", expand=True)
+
+    all_links = []
+    for url in urls:
+        all_links.append(("url", url))
+        listbox.insert(tk.END, f"[URL]  {url}")
+    for note in notes:
+        all_links.append(("note", note))
+        listbox.insert(tk.END, f"[NOTE] {note}")
+
+    if not all_links:
+        listbox.insert(tk.END, "No links found in this note.")
+        listbox.itemconfig(0, {'fg': 'gray'})
+        listbox.configure(state="disabled")
+    else:
+        listbox.select_set(0)
+        listbox.activate(0)
+        listbox.see(0)
+
+    def move_selection(offset):
+        if not all_links:
+            return
+        cur = listbox.curselection()
+        if not cur:
+            return
+        idx = cur[0] + offset
+        if 0 <= idx < listbox.size():
+            listbox.select_clear(0, tk.END)
+            listbox.select_set(idx)
+            listbox.activate(idx)
+            listbox.see(idx)
+
+    def open_selected(event=None):
+        if not all_links:
+            close_popup()
+            return
+
+        sel = listbox.curselection()
+        if not sel:
+            return
+        kind, value = all_links[sel[0]]
+
+        if kind == "url":
+            if not value.startswith("http"):
+                value = "https://" + value
+            webbrowser.open(value)
+
+        elif kind == "note":
+            def find_note_by_name(name, parent=""):
+                for item in tree.get_children(parent):
+                    text = tree.item(item, "text")
+                    if text.lower() == name.lower():
+                        return item
+                    found = find_note_by_name(name, item)
+                    if found:
+                        return found
+                return None
+
+            item = find_note_by_name(value)
+            if item:
+                tree.selection_set(item)
+                tree.focus(item)
+                tree.see(item)
+                on_tree_select(None)
+            elif os.path.exists(value):
+                try:
+                    if os.name == "nt":
+                        os.startfile(value)
+                    else:
+                        os.system(f'xdg-open "{value}"')
+                except Exception as e:
+                    print(e)
+
+        close_popup()
+
+    def close_popup(event=None):
+        """Close both popup and overlay, restore focus to editor."""
+        try:
+            if links_popup and links_popup.winfo_exists():
+                links_popup.grab_release()
+                links_popup.destroy()
+        except Exception:
+            pass
+        try:
+            if overlay_frame and overlay_frame.winfo_exists():
+                overlay_frame.destroy()
+        except Exception:
+            pass
+        window.focus_force()
+        editor.focus_set()
+
+    # Key bindings
+    links_popup.bind("<Escape>", close_popup)
+    listbox.bind("<Escape>", close_popup)
+    listbox.bind("<Return>", open_selected)
+    listbox.bind("j", lambda e: move_selection(1))
+    listbox.bind("k", lambda e: move_selection(-1))
+
+    # Force focus
+    listbox.focus_set()

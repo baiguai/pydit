@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk
 from tkinter.filedialog import askopenfilename, asksaveasfilename
 import csv
+import re, os, webbrowser
 
 current_file = None
 last_key = ""
@@ -18,6 +19,62 @@ yank_buffer = ""
 visual_start = None
 visual_mode = None  # "char" or "line"
 
+
+
+# Help Topics
+help_entries = [
+    # --- TREE MODE ---
+    {"key": "j / k", "mode": "TREE", "description": "Move tree selection down / up"},
+    {"key": "l / h", "mode": "TREE", "description": "Expand / collapse folders"},
+    {"key": "E / C", "mode": "TREE", "description": "Expand / collapse all"},
+    {"key": "J / K", "mode": "TREE", "description": "Move node down / up"},
+    {"key": "H / L", "mode": "TREE", "description": "Outdent / indent selected node"},
+    {"key": "g g", "mode": "TREE", "description": "Go to first node"},
+    {"key": "G", "mode": "TREE", "description": "Go to last node"},
+    {"key": "R", "mode": "TREE", "description": "Rename selected node"},
+    {"key": "D", "mode": "TREE", "description": "Delete selected node"},
+    {"key": "s / S", "mode": "TREE", "description": "Save / Save As"},
+    {"key": "o", "mode": "TREE", "description": "Open file"},
+    {"key": "/", "mode": "TREE", "description": "Open search dialog"},
+    {"key": "?", "mode": "TREE", "description": "Show help dialog"},
+    {"key": "i", "mode": "TREE", "description": "Enter NORMAL mode (edit note)"},
+    {"key": "v", "mode": "TREE", "description": "Enter VISUAL mode"},
+    {"key": "q", "mode": "TREE", "description": "Quit application"},
+
+    # --- NORMAL MODE ---
+    {"key": "i", "mode": "NORMAL", "description": "Enter INSERT mode"},
+    {"key": "v", "mode": "NORMAL", "description": "Enter VISUAL mode (character)"},
+    {"key": "V", "mode": "NORMAL", "description": "Enter VISUAL line mode"},
+    {"key": "p", "mode": "NORMAL", "description": "Paste yanked text"},
+    {"key": "dd", "mode": "NORMAL", "description": "Delete current line"},
+    {"key": "dw", "mode": "NORMAL", "description": "Delete word forward"},
+    {"key": "db", "mode": "NORMAL", "description": "Delete word backward"},
+    {"key": "gg", "mode": "NORMAL", "description": "Go to start of file"},
+    {"key": "G", "mode": "NORMAL", "description": "Go to end of file"},
+    {"key": "0", "mode": "NORMAL", "description": "Move to line start"},
+    {"key": "$", "mode": "NORMAL", "description": "Move to line end"},
+    {"key": "w / b / e", "mode": "NORMAL", "description": "Move forward / back / end of word"},
+    {"key": "h / j / k / l", "mode": "NORMAL", "description": "Move left / down / up / right"},
+    {"key": "Esc", "mode": "NORMAL", "description": "Return to TREE mode"},
+
+    # --- VISUAL MODE ---
+    {"key": "y", "mode": "VISUAL", "description": "Yank (copy) selected text"},
+    {"key": "d", "mode": "VISUAL", "description": "Delete selected text (cut)"},
+    {"key": "x", "mode": "VISUAL", "description": "Cut selected text"},
+    {"key": "p", "mode": "VISUAL", "description": "Paste after selection"},
+    {"key": "h / j / k / l", "mode": "VISUAL", "description": "Move selection left / down / up / right"},
+    {"key": "w / b / e", "mode": "VISUAL", "description": "Expand / contract selection by word"},
+    {"key": "0 / $", "mode": "VISUAL", "description": "Select to line start / line end"},
+    {"key": "G / gg", "mode": "VISUAL", "description": "Select to end / start of file"},
+    {"key": "Esc", "mode": "VISUAL", "description": "Cancel visual mode"},
+
+    # --- INSERT MODE ---
+    {"key": "Any text", "mode": "INSERT", "description": "Type into the editor"},
+    {"key": "Esc", "mode": "INSERT", "description": "Return to NORMAL mode (updates node content)"},
+]
+
+
+# File Operations
 def openfile(window):
     global current_file
     filepath = askopenfilename(filetypes=[("Pydit Files", "*.pyd"), ("CSV Files", "*.csv")])
@@ -102,7 +159,159 @@ def quit_app():
 
 
 
+# Links
+def open_links_dialog():
+    global links_popup
 
+    content = editor.get("1.0", "end-1c")
+
+    # Detect URLs and _note_ patterns
+    url_pattern = r'(https?://[^\s]+|www\.[^\s]+)'
+    urls = re.findall(url_pattern, content)
+
+    note_pattern = r'(?<!\w)_(.+?)_(?!\w)'
+    notes = re.findall(note_pattern, content)
+
+    # --- Popup setup ---
+    links_popup = tk.Toplevel(window)
+    links_popup.configure(bg="black", bd=1, highlightthickness=1, highlightbackground="gray")
+    links_popup.overrideredirect(True)
+    links_popup.transient(window)
+    links_popup.grab_set()
+
+    # Center popup
+    win_x, win_y = window.winfo_rootx(), window.winfo_rooty()
+    win_w, win_h = window.winfo_width(), window.winfo_height()
+    width, height = 500, 300
+    x, y = win_x + (win_w - width)//2, win_y + (win_h - height)//2
+    links_popup.geometry(f"{width}x{height}+{x}+{y}")
+
+    # Border frame
+    border = tk.Frame(links_popup, bg="gray", bd=1)
+    border.pack(fill="both", expand=True, padx=1, pady=1)
+    
+    # Inner container (the black area)
+    container = tk.Frame(border, bg="black")
+    container.pack(fill="both", expand=True, padx=4, pady=4)
+
+    tk.Label(container, text="Detected Links:", bg="black", fg="white",
+             font=("Courier", 11, "bold"), anchor="w").pack(anchor="w", pady=(0, 4))
+
+    listbox = tk.Listbox(
+        container, bg="black", fg="white", selectbackground="#333",
+        selectforeground="white", relief="flat", highlightthickness=1,
+        highlightbackground="gray", activestyle="none", font=("Courier", 10)
+    )
+    listbox.pack(fill="both", expand=True)
+
+    all_links = []
+    for url in urls:
+        all_links.append(("url", url))
+        listbox.insert(tk.END, f"[URL]  {url}")
+    for note in notes:
+        all_links.append(("note", note))
+        listbox.insert(tk.END, f"[NOTE] {note}")
+
+    if not all_links:
+        listbox.insert(tk.END, "No links found in this note.")
+        listbox.itemconfig(0, {'fg': 'gray'})
+        listbox.configure(state="disabled")
+    else:
+        listbox.select_set(0)
+        listbox.activate(0)
+        listbox.see(0)
+
+    def move_selection(offset):
+        if not all_links:
+            return
+        cur = listbox.curselection()
+        if not cur:
+            return
+        idx = cur[0] + offset
+        if 0 <= idx < listbox.size():
+            listbox.select_clear(0, tk.END)
+            listbox.select_set(idx)
+            listbox.activate(idx)
+            listbox.see(idx)
+
+    def open_selected(event=None):
+        if not all_links:
+            close_popup()
+            return
+        sel = listbox.curselection()
+        if not sel:
+            return
+        kind, value = all_links[sel[0]]
+
+        if kind == "url":
+            if not value.startswith("http"):
+                value = "https://" + value
+            webbrowser.open(value)
+
+        elif kind == "note":
+            def find_note_by_name(name, parent=""):
+                for item in tree.get_children(parent):
+                    text = tree.item(item, "text")
+                    if text.lower() == name.lower():
+                        return item
+                    found = find_note_by_name(name, item)
+                    if found:
+                        return found
+                return None
+
+            item = find_note_by_name(value)
+            if item:
+                tree.selection_set(item)
+                tree.focus(item)
+                tree.see(item)
+                on_tree_select(None)
+            elif os.path.exists(value):
+                try:
+                    if os.name == "nt":
+                        os.startfile(value)
+                    else:
+                        os.system(f'xdg-open "{value}"')
+                except Exception as e:
+                    print(e)
+
+        close_popup()
+
+    def close_popup(event=None):
+        """Close popup and restore key focus."""
+        try:
+            if links_popup and links_popup.winfo_exists():
+                window.unbind("<Button-1>")  # remove global click binding
+                links_popup.grab_release()
+                links_popup.destroy()
+        except Exception:
+            pass
+        window.focus_force()
+        select_tree()
+
+    # Close if click outside popup
+    def click_outside(event):
+        if not links_popup:
+            return
+        x1, y1 = links_popup.winfo_rootx(), links_popup.winfo_rooty()
+        x2, y2 = x1 + links_popup.winfo_width(), y1 + links_popup.winfo_height()
+        if not (x1 <= event.x_root <= x2 and y1 <= event.y_root <= y2):
+            close_popup()
+
+    window.bind("<Button-1>", click_outside)
+
+    # Key bindings
+    links_popup.bind("<Escape>", close_popup)
+    listbox.bind("<Escape>", close_popup)
+    listbox.bind("<Return>", open_selected)
+    listbox.bind("j", lambda e: move_selection(1))
+    listbox.bind("k", lambda e: move_selection(-1))
+
+    # Force focus
+    listbox.focus_set()
+
+
+
+# Search Methods
 def open_search():
     global search_popup, search_var, search_listbox, search_results
 
@@ -247,7 +456,7 @@ def close_search(event=None):
 
 
 
-
+# Mode Method
 def set_mode(new_mode):
     global mode
     mode = new_mode
@@ -255,7 +464,7 @@ def set_mode(new_mode):
 
 
 
-
+# Tree Methods
 def update_node():
     global tree, editor
 
@@ -493,6 +702,125 @@ def collapse_all_with_children(tree, parent):
 
 
 
+# Help Methods
+def open_help_dialog():
+    global help_popup
+
+    # Prevent duplicates
+    if "help_popup" in globals() and help_popup and help_popup.winfo_exists():
+        return
+
+    help_popup = tk.Toplevel(window)
+    help_popup.configure(bg="black", bd=1, highlightthickness=1, highlightbackground="gray")
+    help_popup.overrideredirect(True)
+    help_popup.transient(window)
+    help_popup.grab_set()
+
+    # Center
+    win_x = window.winfo_rootx()
+    win_y = window.winfo_rooty()
+    win_width = window.winfo_width()
+    win_height = window.winfo_height()
+    
+    # Make help window fill about 3/4 of main window width, and 3/4 of height
+    width = int(win_width * 0.75)
+    height = int(win_height * 0.75)
+    
+    # Center it
+    x = win_x + (win_width - width) // 2
+    y = win_y + (win_height - height) // 2
+    
+    help_popup.geometry(f"{width}x{height}+{x}+{y}")
+
+    container = tk.Frame(help_popup, bg="black")
+    container.pack(fill="both", expand=True, padx=6, pady=6)
+
+    tk.Label(container, text="Key Bindings", fg="white", bg="black",
+             font=("Courier", 12, "bold"), anchor="w").pack(anchor="w", pady=(0, 5))
+
+    # Frame to hold listbox + scrollbar
+    scroll_frame = tk.Frame(container, bg="black")
+    scroll_frame.pack(fill="both", expand=True)
+    
+    scrollbar = tk.Scrollbar(scroll_frame, orient="vertical")
+    scrollbar.pack(side="right", fill="y")
+    
+    listbox = tk.Listbox(
+        scroll_frame,
+        bg="black",
+        fg="white",
+        relief="flat",
+        selectbackground="#333",
+        font=("Courier", 10),
+        highlightthickness=1,
+        highlightbackground="gray",
+        activestyle="none",
+        yscrollcommand=scrollbar.set
+    )
+    listbox.pack(fill="both", expand=True)
+    scrollbar.config(command=listbox.yview)
+    listbox.focus_set()
+
+    # Header row
+    header = f"{'KEY':<12} {'MODE':<8} DESCRIPTION"
+    listbox.insert(tk.END, header)
+    listbox.insert(tk.END, "-" * 60)
+    
+    # Items
+    for h in help_entries:
+        entry = f"{h['key']:<12} {h['mode']:<8} {h['description']}"
+        listbox.insert(tk.END, entry)
+    
+    # Highlight header rows
+    listbox.itemconfig(0, {'fg': 'cyan'})
+    listbox.itemconfig(1, {'fg': 'gray'})
+    
+    # Initial selection (first actual entry, skipping header)
+    if listbox.size() > 2:
+        listbox.select_set(2)
+        listbox.activate(2)
+        listbox.see(2)
+    
+    def move_selection(offset):
+        cur = listbox.curselection()
+        if not cur:
+            idx = 2
+        else:
+            idx = cur[0] + offset
+        if idx < 2:
+            idx = 2
+        elif idx >= listbox.size():
+            idx = listbox.size() - 1
+        listbox.select_clear(0, tk.END)
+        listbox.select_set(idx)
+        listbox.activate(idx)
+        listbox.see(idx)
+    
+    # Navigation keys
+    help_popup.bind("j", lambda e: move_selection(1))
+    help_popup.bind("k", lambda e: move_selection(-1))
+    help_popup.bind("<Down>", lambda e: move_selection(1))
+    help_popup.bind("<Up>", lambda e: move_selection(-1))
+    
+    # Close on Escape (from anywhere)
+    help_popup.bind("<Escape>", lambda e: close_help_dialog())
+    window.bind("<Escape>", lambda e: close_help_dialog())
+    
+    def close_help_dialog():
+        global help_popup
+        try:
+            if help_popup and help_popup.winfo_exists():
+                help_popup.destroy()
+        except Exception:
+            pass
+        help_popup = None
+        # Unbind the Escape key used to close help
+        window.unbind("<Escape>")
+        window.focus_force()
+        select_tree()
+
+
+
 # Vim Movement
 def move_cursor_down(n=1):
     editor.mark_set("insert", f"{editor.index('insert')} +{n}line")
@@ -615,6 +943,14 @@ def delete_selection():
     except Exception:
         pass
 
+def cut_selection():
+    global yank_buffer
+    try:
+        yank_buffer = editor.get("sel.first", "sel.last")
+        editor.delete("sel.first", "sel.last")
+    except Exception:
+        pass
+
 def yank_current_line(n=1):
     global yank_buffer
     start = editor.index("insert linestart")
@@ -656,6 +992,11 @@ def on_tree_key(event):
         if key == "q":
             quit_app()
             return "break"
+        elif key == "question":
+            if event.state & 0x0001 or event.state & 0x0002 or event.state & 0x0004 or event.state & 0x0008 or event.state & 0x00010:
+                # Shift or modifier likely held – interpret as '?'
+                open_help_dialog()
+                return "break"
         elif key == "s":
             savefile()
         elif key == "S":
@@ -713,6 +1054,8 @@ def on_tree_key(event):
         elif key == "slash":
             open_search()
             return "break"
+        elif key == "numbersign":
+            open_links_dialog()
         elif key == "v":
             set_mode("VISUAL")
         elif key == "i":
@@ -753,6 +1096,10 @@ def on_editor_key(event):
                 return "break"
             elif key == "d":
                 delete_selection()
+                cancel_visual_mode()
+                return "break"
+            elif key == "x":
+                cut_selection()
                 cancel_visual_mode()
                 return "break"
             elif key == "p":
@@ -944,8 +1291,14 @@ def main():
     mode_label = tk.Label(window, text=f"MODE: {mode}", fg="white", bg="black")
     mode_label.grid(row=1, column=0, columnspan=2, sticky="w")
 
+    #t  label
+    mode_label = tk.Label(window, text=f"MODE: {mode}", fg="white", bg="black")
+    mode_label.grid(row=1, column=0, columnspan=2, sticky="w")
+
     # Global key handling
     window.bind("<Key>", on_window_key)
+    window.bind("?", lambda e: open_help_dialog())
+    window.bind("<Shift-slash>", lambda e: open_help_dialog())  # fallback for Shift+/ systems
     tree.bind("<Key>", on_tree_key)
     editor.bind("<Key>", on_editor_key)
 
