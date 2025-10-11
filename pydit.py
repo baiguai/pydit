@@ -24,6 +24,12 @@ visual_mode = None  # "char" or "line"
 # Help Topics
 help_entries = [
     # --- TREE MODE ---
+    {"key": "n", "mode": "TREE", "description": "New notes library"},
+    {"key": "s / S", "mode": "TREE", "description": "Save / Save As"},
+
+    {"key": "A", "mode": "TREE", "description": "Add new folder node"},
+    {"key": "a", "mode": "TREE", "description": "Add new notes node"},
+
     {"key": "j / k", "mode": "TREE", "description": "Move tree selection down / up"},
     {"key": "l / h", "mode": "TREE", "description": "Expand / collapse folders"},
     {"key": "E / C", "mode": "TREE", "description": "Expand / collapse all"},
@@ -33,13 +39,13 @@ help_entries = [
     {"key": "G", "mode": "TREE", "description": "Go to last node"},
     {"key": "R", "mode": "TREE", "description": "Rename selected node"},
     {"key": "D", "mode": "TREE", "description": "Delete selected node"},
-    {"key": "s / S", "mode": "TREE", "description": "Save / Save As"},
     {"key": "o", "mode": "TREE", "description": "Open file"},
     {"key": "/", "mode": "TREE", "description": "Open search dialog"},
     {"key": "?", "mode": "TREE", "description": "Show help dialog"},
     {"key": "i", "mode": "TREE", "description": "Enter NORMAL mode (edit note)"},
     {"key": "v", "mode": "TREE", "description": "Enter VISUAL mode"},
     {"key": "q", "mode": "TREE", "description": "Quit application"},
+    {"key": "#", "mode": "TREE", "description": "Show links within the current note"},
 
     # --- NORMAL MODE ---
     {"key": "i", "mode": "NORMAL", "description": "Enter INSERT mode"},
@@ -1362,7 +1368,7 @@ def on_tree_select(event):
     item = selected[0]
     editor.delete(1.0, tk.END)
     parent = tree.parent(item)
-    if parent:
+    if parent and tree.item(item, "values"):
         content = tree.item(item, "values")[0]
         editor.insert(tk.END, content)
 
