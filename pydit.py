@@ -75,59 +75,14 @@ help_entries = [
 
 
 # File Operations
-def openfile(window):
+def newfile():
     global current_file
-    filepath = askopenfilename(filetypes=[("Pydit Files", "*.pyd"), ("CSV Files", "*.csv")])
-    if not filepath:
-        return
 
-    # Clear tree
-    if tree.get_children():
-        for item in tree.get_children():
-            tree.delete(item)
-
+    for item in tree.get_children():
+        tree.delete(item)
     editor.delete(1.0, tk.END)
 
-    folders = {}
-    selected_path_to_find = ""
-    folder_expanded_map = {}
-    node_path_map = {}
-
-    with open(filepath, newline='', encoding='utf-8') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            folder_name = row.get("Folder", "").strip() or "Uncategorized"
-            note_name = row.get("Note", "").strip() or "Untitled"
-            content = row.get("Content", "")
-            expanded = row.get("Expanded", "False").strip().lower() == "true"
-            selected_path = row.get("Selected", "")
-
-            if selected_path:
-                selected_path_to_find = selected_path  # Only need one (last will win)
-
-            if folder_name not in folders:
-                folder_id = tree.insert("", tk.END, text=folder_name, open=expanded)
-                folders[folder_name] = folder_id
-                folder_expanded_map[folder_name] = expanded
-                node_path_map[f"{folder_name}"] = folder_id
-            else:
-                folder_id = folders[folder_name]
-
-            note_id = tree.insert(folder_id, tk.END, text=note_name, values=(content,))
-            node_path_map[f"{folder_name}/{note_name}"] = note_id
-
-    window.title(f"Pydit - {filepath}")
-    current_file = filepath
-    set_mode("TREE")
-
-    # Try to re-select the previously selected node
-    if selected_path_to_find in node_path_map:
-        tree.selection_set(node_path_map[selected_path_to_find])
-        tree.focus(node_path_map[selected_path_to_find])
-        tree.see(node_path_map[selected_path_to_find])
-        on_tree_select(None)
-        
-    select_tree()
+    current_file = ""
 
 def savefile():
     global current_file
@@ -465,6 +420,10 @@ def set_mode(new_mode):
 
 
 # Tree Methods
+def is_folder(item_id):
+    """Return True if the given tree item is a folder (no 'values' content)."""
+    return not bool(tree.item(item_id, "values"))
+
 def update_node():
     global tree, editor
 
@@ -551,40 +510,113 @@ def select_tree():
     if item:
         window.after(10, lambda: (tree.focus(item), tree.focus_set()))
 
+def openfile(window):
+    global current_file
+    filepath = askopenfilename(filetypes=[("Pydit Files", "*.pyd"), ("CSV Files", "*.csv")])
+    if not filepath:
+        return
+
+    # Clear everything
+    for item in tree.get_children():
+        tree.delete(item)
+    editor.delete(1.0, tk.END)
+
+    current_file = filepath
+    window.title(f"Pydit - {filepath}")
+
+    selected_path_to_find = ""
+    node_path_map = {}
+
+    with open(filepath, newline='', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+
+    for row in rows:
+        path = row.get("Path", "").strip()
+        node_type = row.get("Type", "").strip()
+        content = row.get("Content", "")
+        expanded = row.get("Expanded", "").strip().lower() in ("1", "true", "yes")
+        selected = row.get("Selected", "").strip().lower() in ("1", "true", "yes")
+
+        if not path:
+            continue
+
+        parts = path.split("/")
+        name = parts[-1]
+        parent_id = ""
+
+        # Traverse the path to find/create parents
+        for depth, part in enumerate(parts[:-1]):
+            partial_path = "/".join(parts[:depth + 1])
+            if partial_path not in node_path_map:
+                parent_parent = "/".join(parts[:depth]) if depth > 0 else ""
+                parent_node = node_path_map.get(parent_parent, "")
+                node_id = tree.insert(parent_node, tk.END, text=part, open=True)
+                node_path_map[partial_path] = node_id
+
+        # Insert the final node
+        parent_path = "/".join(parts[:-1])
+        parent_id = node_path_map.get(parent_path, "")
+        if node_type == "folder":
+            node_id = tree.insert(parent_id, tk.END, text=name, open=expanded)
+        else:  # note
+            node_id = tree.insert(parent_id, tk.END, text=name, values=(content,))
+        node_path_map[path] = node_id
+
+        if selected:
+            selected_path_to_find = path
+
+    # Restore selection
+    if selected_path_to_find and selected_path_to_find in node_path_map:
+        target_id = node_path_map[selected_path_to_find]
+        tree.selection_set(target_id)
+        tree.focus(target_id)
+        tree.see(target_id)
+        on_tree_select(None)
+
+    set_mode("TREE")
+    select_tree()
+
 def _write_to_csv(filepath):
     rows = []
     selected_item = tree.selection()
     selected_path = ""
 
     def get_item_path(item):
-        """Returns a unique path from root to item for selection tracking."""
+        """Return a unique slash-delimited path from root to item."""
         path = []
         while item:
             path.insert(0, tree.item(item, "text"))
             item = tree.parent(item)
         return "/".join(path)
 
-    for folder_id in tree.get_children():
-        folder_name = tree.item(folder_id, "text")
-        folder_expanded = tree.item(folder_id, "open")
-        folder_path = get_item_path(folder_id)
+    def write_node(node_id):
+        nonlocal selected_path
 
-        if selected_item and folder_id == selected_item[0]:
-            selected_path = folder_path
+        text = tree.item(node_id, "text")
+        values = tree.item(node_id, "values")
+        content = values[0] if values and len(values) > 0 else ""
+        expanded = tree.item(node_id, "open")
+        path = get_item_path(node_id)
 
-        for note_id in tree.get_children(folder_id):
-            note_name = tree.item(note_id, "text")
-            content = tree.item(note_id, "values")[0]
-            note_path = get_item_path(note_id)
+        if selected_item and node_id == selected_item[0]:
+            selected_path = path
 
-            if selected_item and note_id == selected_item[0]:
-                selected_path = note_path
+        # Save folder or note
+        if content:  # note
+            rows.append([path, "note", content, expanded, selected_path == path])
+        else:  # folder
+            rows.append([path, "folder", "", expanded, selected_path == path])
 
-            rows.append([folder_name, note_name, content, folder_expanded, selected_path])
+        for child in tree.get_children(node_id):
+            write_node(child)
+
+    for node in tree.get_children(""):
+        write_node(node)
 
     with open(filepath, "w", newline='', encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["Folder", "Note", "Content", "Expanded", "Selected"])  # Updated header
+        writer.writerow(["Path", "Type", "Content", "Expanded", "Selected"])
         writer.writerows(rows)
 
 def move_tree_selection(direction):
@@ -629,6 +661,10 @@ def expand_or_enter():
     if not selected:
         return
     item = selected[0]
+
+    if not is_folder(item):
+        return  # Notes can't be expanded or entered
+
     if tree.get_children(item):
         if not tree.item(item, "open"):
             tree.item(item, open=True)
@@ -645,7 +681,8 @@ def collapse_or_up():
     if not selected:
         return
     item = selected[0]
-    if tree.get_children(item) and tree.item(item, "open"):
+
+    if is_folder(item) and tree.get_children(item) and tree.item(item, "open"):
         tree.item(item, open=False)
     else:
         parent = tree.parent(item)
@@ -653,6 +690,68 @@ def collapse_or_up():
             tree.selection_set(parent)
             tree.focus(parent)
             tree.see(parent)
+
+def add_folder():
+    """Create a new folder under the selected item (or at root) and trigger rename."""
+    global tree
+
+    selected = tree.selection()
+    parent = ""
+
+    if selected:
+        sel = selected[0]
+        is_root = (tree.parent(sel) == "")
+        values = tree.item(sel, "values")
+        is_note = bool(values)  # notes have a content value tuple
+
+        if is_note:
+            # notes → sibling
+            parent = tree.parent(sel)
+        else:
+            # folders → add inside (even if root)
+            parent = sel
+    else:
+        parent = ""  # nothing selected → root-level
+
+    # Insert new folder
+    new_id = tree.insert(parent, tk.END, text="New Folder", open=True)
+
+    # Select and rename
+    tree.selection_set(new_id)
+    tree.focus(new_id)
+    tree.see(new_id)
+    rename_selected_node()
+
+def add_note():
+    """Create a new note under the selected item (or at root) and trigger rename."""
+    global tree
+
+    selected = tree.selection()
+    parent = ""
+
+    if selected:
+        sel = selected[0]
+        is_root = (tree.parent(sel) == "")
+        values = tree.item(sel, "values")
+        is_note = bool(values)
+
+        if is_note:
+            # note → sibling
+            parent = tree.parent(sel)
+        else:
+            # folder (even root) → inside it
+            parent = sel
+    else:
+        parent = ""  # nothing selected → root-level
+
+    # Insert new note (store empty content)
+    new_id = tree.insert(parent, tk.END, text="New Note", values=("",))
+
+    # Select and rename
+    tree.selection_set(new_id)
+    tree.focus(new_id)
+    tree.see(new_id)
+    rename_selected_node()
 
 def delete_selected_node():
     """Delete the currently selected node (and children if folder)."""
@@ -1003,6 +1102,8 @@ def on_tree_key(event):
             savefile_as()
         elif key == "o":
             openfile(window)
+        elif key == "n":
+            newfile()
         elif key == "C":
             collapse_all_with_children(tree, "")
         elif key == "E":
@@ -1046,6 +1147,10 @@ def on_tree_key(event):
                 prev_sibling = siblings[index - 1]
                 tree.move(item, prev_sibling, "end")
                 tree.item(prev_sibling, open=True)
+        elif key == "A":
+            add_folder()
+        elif key == "a":
+            add_note()
         elif key == "R":
             rename_selected_node()
         elif key == "D":
@@ -1207,26 +1312,32 @@ def on_window_key(event):
     global editor, tree
     selected = tree.selection()
 
+    key = event.keysym
+
     if mode == "TREE" and not selected:
-        if event.keysym == "s":
+        if key == "s":
             savefile()
-        elif event.keysym == "q":
+        elif key == "A":
+            add_folder()
+        elif key == "a":
+            add_note()
+        elif key == "q":
             window.destroy()
             return "break"
-        elif event.keysym == "S":
+        elif key == "S":
             savefile_as()
-        elif event.keysym == "o":
+        elif key == "o":
             openfile(window)
-        elif event.keysym == "i":
+        elif key == "i":
             set_mode("INSERT")
             editor.focus_set()
             return "break"   # stops focus conflicts
-        elif event.keysym == "v":
+        elif key == "v":
             set_mode("VISUAL")
             return "break"
 
     elif mode == "NORMAL":
-        if event.keysym == "Escape":
+        if key == "Escape":
             set_mode("TREE")
             return "break"
 
