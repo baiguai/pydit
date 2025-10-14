@@ -43,9 +43,13 @@ help_entries = [
     {"key": "/", "mode": "TREE", "description": "Open search dialog"},
     {"key": "?", "mode": "TREE", "description": "Show help dialog"},
     {"key": "i", "mode": "TREE", "description": "Enter NORMAL mode (edit note)"},
+    {"key": "I", "mode": "TREE", "description": "Enter INSERT mode (edit note)"},
     {"key": "v", "mode": "TREE", "description": "Enter VISUAL mode"},
     {"key": "q", "mode": "TREE", "description": "Quit application"},
     {"key": "#", "mode": "TREE", "description": "Show links within the current note"},
+    {"key": "m", "mode": "TREE", "description": "Bookmark current node"},
+    {"key": "`", "mode": "TREE", "description": "Show bookmarks dialog"},
+
 
     # --- NORMAL MODE ---
     {"key": "i", "mode": "NORMAL", "description": "Enter INSERT mode"},
@@ -96,7 +100,7 @@ def savefile():
         return savefile_as()
 
     _write_to_csv(current_file)
-    print(f"Saved to {current_file}")
+    show_msg(f"Saved to {current_file}")
 
 def savefile_as():
     global current_file
@@ -107,7 +111,7 @@ def savefile_as():
 
     _write_to_csv(filepath)
     current_file = filepath
-    print(f"Saved As {filepath}")
+    show_msg(f"Saved As {filepath}")
 
 def quit_app():
     global window, quitting
@@ -281,7 +285,7 @@ def open_search():
 
     # Create Toplevel
     search_popup = tk.Toplevel(window)
-    search_popup.configure(bg="black", bd=1, highlightthickness=1, highlightbackground="gray")
+    search_popup.configure(bg="gray", bd=1, highlightthickness=1, highlightbackground="gray")
     search_popup.overrideredirect(True)  # Remove window decorations
     search_popup.transient(window)
     search_popup.grab_set()
@@ -369,7 +373,7 @@ def update_search_results(*args):
 
             if match:
                 search_results.append((full_path, item))
-                search_listbox.insert(tk.END, full_path)
+                search_listbox.insert(tk.END, f"{text}   {full_path}")
 
             walk_tree(item, full_path)
 
@@ -417,11 +421,160 @@ def close_search(event=None):
 
 
 
-# Mode Method
+# Bookmark Methods
+def get_node_path(item):
+    """Return full path of a tree node from root to item."""
+    parts = []
+    while item:
+        parts.insert(0, tree.item(item, "text"))
+        item = tree.parent(item)
+    return "/".join(parts)
+
+def toggle_bookmark():
+    """Add or remove the currently selected node from bookmarks."""
+    selected = tree.selection()
+    if not selected:
+        return
+    item = selected[0]
+    tags = list(tree.item(item, "tags"))
+
+    if "bookmarked" in tags:
+        tags.remove("bookmarked")
+        tree.item(item, tags=tuple(tags))
+        show_msg(f"Removed bookmark: {tree.item(item, 'text')}")
+    else:
+        tags.append("bookmarked")
+        tree.item(item, tags=tuple(tags))
+        show_msg(f"Bookmarked: {tree.item(item, 'text')}")
+
+    refresh_bookmarks_cache()
+
+def refresh_bookmarks_cache():
+    global bookmarks
+    bookmarks = []
+
+    def walk(parent=""):
+        for item in tree.get_children(parent):
+            tags = tree.item(item, "tags")
+            if "bookmarked" in tags:
+                bookmarks.append({
+                    "id": item,
+                    "path": get_node_path(item),
+                    "name": tree.item(item, "text")
+                })
+            walk(item)
+
+    walk()
+
+def open_bookmarks_dialog():
+    """Show dialog listing all bookmarks and allow navigation."""
+    if not bookmarks:
+        show_msg("No bookmarks yet.")
+        return
+
+    popup = tk.Toplevel(window)
+    popup.configure(bg="gray", bd=1, highlightthickness=1, highlightbackground="gray")
+    popup.overrideredirect(True)
+    popup.transient(window)
+    popup.grab_set()
+
+    # Center on window
+    win_x, win_y = window.winfo_rootx(), window.winfo_rooty()
+    win_w, win_h = window.winfo_width(), window.winfo_height()
+    width, height = 500, 300
+    x, y = win_x + (win_w - width)//2, win_y + (win_h - height)//2
+    popup.geometry(f"{width}x{height}+{x}+{y}")
+
+    container = tk.Frame(popup, bg="black")
+    container.pack(fill="both", expand=True, padx=2, pady=1)
+
+    tk.Label(container, text="Bookmarks:", bg="black", fg="white",
+             font=("Courier", 11, "bold"), anchor="w").pack(anchor="w", pady=(0, 4))
+
+    listbox = tk.Listbox(
+        container, bg="black", fg="white", selectbackground="#333",
+        selectforeground="white", relief="flat", highlightthickness=1,
+        highlightbackground="gray", activestyle="none", font=("Courier", 10)
+    )
+    listbox.pack(fill="both", expand=True)
+
+    for bm in bookmarks:
+        listbox.insert(tk.END, f"{bm['name']:<20}  {bm['path']}")
+
+    listbox.select_set(0)
+    listbox.activate(0)
+    listbox.focus_set()
+
+    def move_selection(offset):
+        cur = listbox.curselection()
+        if not cur:
+            return
+        idx = cur[0] + offset
+        if 0 <= idx < listbox.size():
+            listbox.select_clear(0, tk.END)
+            listbox.select_set(idx)
+            listbox.activate(idx)
+            listbox.see(idx)
+
+    def go_to_selected(event=None):
+        sel = listbox.curselection()
+        if not sel:
+            return
+        bm = bookmarks[sel[0]]
+        item = bm["id"]
+        if tree.exists(item):
+            tree.selection_set(item)
+            tree.focus(item)
+            tree.see(item)
+            on_tree_select(None)
+        close_popup()
+
+    def close_popup(event=None):
+        popup.destroy()
+        window.focus_force()
+        select_tree()
+
+    # Navigation
+    listbox.bind("j", lambda e: move_selection(1))
+    listbox.bind("k", lambda e: move_selection(-1))
+    listbox.bind("<Return>", go_to_selected)
+    listbox.bind("<Escape>", close_popup)
+    popup.bind("<Escape>", close_popup)
+
+    # gg/G navigation
+    def go_first(event=None):
+        listbox.select_clear(0, tk.END)
+        listbox.select_set(0)
+        listbox.activate(0)
+        listbox.see(0)
+    def go_last(event=None):
+        last = listbox.size() - 1
+        listbox.select_clear(0, tk.END)
+        listbox.select_set(last)
+        listbox.activate(last)
+        listbox.see(last)
+    popup.bind("g", lambda e: setattr(popup, "_gg", True) or "break")
+    popup.bind("g", lambda e: go_first() if getattr(popup, "_gg", False) else None)
+    popup.bind("G", go_last)
+
+
+
+# Mode, Labels, and UI
 def set_mode(new_mode):
     global mode
     mode = new_mode
     mode_label.config(text=f"MODE: {mode}")
+
+def clear_msg():
+    msg_label.config(text="")
+
+def show_msg(msg_text):
+    global msg_label
+    msg_label.config(text=msg_text)
+    msg_label.after(2000, clear_msg)
+
+def resize_tree(amount):
+    tree.column("#0", width=(tree.column("#0")['width'])+amount)
 
 
 
@@ -522,6 +675,8 @@ def openfile(window):
     if not filepath:
         return
 
+    apply_dark_theme(tree)
+
     # Clear everything
     for item in tree.get_children():
         tree.delete(item)
@@ -543,6 +698,7 @@ def openfile(window):
         content = row.get("Content", "")
         expanded = row.get("Expanded", "").strip().lower() in ("1", "true", "yes")
         selected = row.get("Selected", "").strip().lower() in ("1", "true", "yes")
+        bookmarked = str(row.get("Bookmarked", "") or "").strip().lower() in ("1", "true", "yes")
 
         if not path:
             continue
@@ -564,10 +720,15 @@ def openfile(window):
         parent_path = "/".join(parts[:-1])
         parent_id = node_path_map.get(parent_path, "")
         if node_type == "folder":
-            node_id = tree.insert(parent_id, tk.END, text=name, open=expanded)
+            node_id = tree.insert(parent_id, tk.END, text=name, open=expanded, tags=("folder",))
         else:  # note
-            node_id = tree.insert(parent_id, tk.END, text=name, values=(content,))
+            node_id = tree.insert(parent_id, tk.END, text=name, values=(content,), tags=("note",))
         node_path_map[path] = node_id
+
+        if bookmarked:
+            tags = list(tree.item(node_id, "tags"))
+            tags.append("bookmarked")
+            tree.item(node_id, tags=tags)
 
         if selected:
             selected_path_to_find = path
@@ -579,6 +740,8 @@ def openfile(window):
         tree.focus(target_id)
         tree.see(target_id)
         on_tree_select(None)
+
+    refresh_bookmarks_cache()
 
     set_mode("TREE")
     select_tree()
@@ -604,15 +767,19 @@ def _write_to_csv(filepath):
         content = values[0] if values and len(values) > 0 else ""
         expanded = tree.item(node_id, "open")
         path = get_item_path(node_id)
+        bookmarked = "1" if "bookmarked" in tree.item(node_id, "tags") else "0"
 
         if selected_item and node_id == selected_item[0]:
             selected_path = path
 
         # Save folder or note
-        if content:  # note
-            rows.append([path, "note", content, expanded, selected_path == path])
-        else:  # folder
-            rows.append([path, "folder", "", expanded, selected_path == path])
+        expanded_val = "1" if expanded else "0"
+        selected_val = "True" if selected_path == path else "False"
+
+        if content:
+            rows.append([path, "note", content, expanded_val, selected_val, bookmarked])
+        else:
+            rows.append([path, "folder", "", expanded_val, selected_val, bookmarked])
 
         for child in tree.get_children(node_id):
             write_node(child)
@@ -622,7 +789,7 @@ def _write_to_csv(filepath):
 
     with open(filepath, "w", newline='', encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["Path", "Type", "Content", "Expanded", "Selected"])
+        writer.writerow(["Path", "Type", "Content", "Expanded", "Selected", "Bookmarked"])
         writer.writerows(rows)
 
 def move_tree_selection(direction):
@@ -720,7 +887,7 @@ def add_folder():
         parent = ""  # nothing selected → root-level
 
     # Insert new folder
-    new_id = tree.insert(parent, tk.END, text="New Folder", open=True)
+    new_id = tree.insert(parent, tk.END, text="New Folder", open=True, tags=("folder",))
 
     # Select and rename
     tree.selection_set(new_id)
@@ -751,7 +918,7 @@ def add_note():
         parent = ""  # nothing selected → root-level
 
     # Insert new note (store empty content)
-    new_id = tree.insert(parent, tk.END, text="New Note", values=("",))
+    new_id = tree.insert(parent, tk.END, text="New Note", values=("",), tags=("note",))
 
     # Select and rename
     tree.selection_set(new_id)
@@ -1129,7 +1296,7 @@ def on_tree_key(event):
         elif key == "g":
             if last_key != "g":
                 last_key = "g"
-                return false
+                return "break"
             else:
                 select_first_node()
                 last_key = ""
@@ -1172,7 +1339,17 @@ def on_tree_key(event):
         elif key == "i":
             set_mode("NORMAL")
             editor.focus_set()
-            editor
+        elif key == "I":
+            set_mode("INSERT")
+            editor.focus_set()
+        elif key == "m":
+            toggle_bookmark()
+        elif key == "grave":
+            open_bookmarks_dialog()
+        elif key == "bracketright":  # ]
+            resize_tree(40)
+        elif key == "bracketleft":   # [
+            resize_tree(-40)
 
 def on_editor_key(event):
     global editor, tree, command_count, pending_command
@@ -1382,9 +1559,12 @@ def apply_dark_theme(tree):
                     rowheight=20,
                     borderwidth=0)
     style.map("Treeview", background=[("selected", "#333")])
+    tree.tag_configure("folder", foreground="white", font=("Courier", 10, "bold"))
+    tree.tag_configure("note", foreground="#cccccc", font=("Courier", 10, "normal"))
+    tree.tag_configure("bookmarked", foreground="#FFD700")
 
 def main():
-    global tree, editor, mode_label, window, quitting
+    global tree, editor, mode_label, msg_label, window, quitting
 
     window = tk.Tk()
     window.title("Pydit")
@@ -1396,8 +1576,10 @@ def main():
 
     # Left side: treeview
     tree = ttk.Treeview(window, show="tree")
-    tree.grid(row=0, column=0, sticky="ns")
+    tree.grid(row=0, column=0, sticky="ns", columnspan=1)
+    tree.column("#0", width=400)  # adjust the width value as needed
     tree.bind("<<TreeviewSelect>>", on_tree_select)
+
     apply_dark_theme(tree)
 
     # Right side: text editor
@@ -1408,9 +1590,9 @@ def main():
     mode_label = tk.Label(window, text=f"MODE: {mode}", fg="white", bg="black")
     mode_label.grid(row=1, column=0, columnspan=2, sticky="w")
 
-    #t  label
-    mode_label = tk.Label(window, text=f"MODE: {mode}", fg="white", bg="black")
-    mode_label.grid(row=1, column=0, columnspan=2, sticky="w")
+    # Message label
+    msg_label = tk.Label(window, text=f"", fg="white", bg="black")
+    msg_label.grid(row=1, column=1, columnspan=2, sticky="w")
 
     # Global key handling
     window.bind("<Key>", on_window_key)
