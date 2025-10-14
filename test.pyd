@@ -1,29 +1,10 @@
-Folder,Note,Content,Expanded,Selected
-Work,Meeting Notes,"Discuss Q4 goals and budgets with the team.
-hmmmm
+Path,Type,Content,Expanded,Selected,Bookmarked
+aaaaaa,folder,,0,False,0
+bbbbbb,folder,,1,False,1
+bbbbbb/cccccc,folder,,1,False,0
+bbbbbb/cccccc/dddddd,note,"dddd
 dddd
-ddddd
-dddd
-dddd",0,
-Work,Ideas,Consider moving to a four-day work week.,0,
-Work,Books to Read,"The Hobbit
-Dune
-1984
-The Name of the Wind.",0,
-Personal,Shopping List,"Milk\nEggs\nBread\nCoffee.
-
-dddd
-dddd
-dddd
-d
-
 dddd
 
 
-_Projects_",1,Personal/Shopping List
-Personal,Thoughts,Time spent learning is never wasted.,1,Personal/Shopping List
-Personal,Todo,Finish project report and submit by Friday.,1,Personal/Shopping List
-Projects,Text Editor,Start Pydit project. Add treeview and editor split view.,0,Personal/Shopping List
-Projects,Website,Update portfolio with new Python apps.,0,Personal/Shopping List
-Random,Quotes,Simplicity is the ultimate sophistication.,0,Personal/Shopping List
-Random,Code Snippet,print('Hello,0,Personal/Shopping List
+_aaaaaa_",0,True,1
