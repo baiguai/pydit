@@ -13,6 +13,8 @@ search_var = None
 search_listbox = None
 search_results = []
 
+history = []
+
 command_count = ""
 pending_command = ""
 yank_buffer = ""
@@ -49,6 +51,8 @@ help_entries = [
     {"key": "#", "mode": "TREE", "description": "Show links within the current note"},
     {"key": "m", "mode": "TREE", "description": "Bookmark current node"},
     {"key": "`", "mode": "TREE", "description": "Show bookmarks dialog"},
+
+    {"key": "<", "mode": "TREE", "description": "Show history dialog"},
 
 
     # --- NORMAL MODE ---
@@ -517,11 +521,10 @@ def open_bookmarks_dialog():
             listbox.see(idx)
 
     def go_to_selected(event=None):
-        sel = listbox.curselection()
         if not sel:
             return
-        bm = bookmarks[sel[0]]
-        item = bm["id"]
+        his = history[sel[0]]
+        item = his["id"]
         if tree.exists(item):
             tree.selection_set(item)
             tree.focus(item)
@@ -557,6 +560,98 @@ def open_bookmarks_dialog():
     popup.bind("g", lambda e: go_first() if getattr(popup, "_gg", False) else None)
     popup.bind("G", go_last)
 
+
+
+# History Methods
+def open_history_dialog():
+    if not history:
+        show_msg("No history yet.")
+        return
+
+    popup = tk.Toplevel(window)
+    popup.configure(bg="gray", bd=1, highlightthickness=1, highlightbackground="gray")
+    popup.overrideredirect(True)
+    popup.transient(window)
+    popup.grab_set()
+
+    # Center on window
+    win_x, win_y = window.winfo_rootx(), window.winfo_rooty()
+    win_w, win_h = window.winfo_width(), window.winfo_height()
+    width, height = 500, 300
+    x, y = win_x + (win_w - width)//2, win_y + (win_h - height)//2
+    popup.geometry(f"{width}x{height}+{x}+{y}")
+
+    container = tk.Frame(popup, bg="black")
+    container.pack(fill="both", expand=True, padx=2, pady=1)
+
+    tk.Label(container, text="History:", bg="black", fg="white",
+             font=("Courier", 11, "bold"), anchor="w").pack(anchor="w", pady=(0, 4))
+
+    listbox = tk.Listbox(
+        container, bg="black", fg="white", selectbackground="#333",
+        selectforeground="white", relief="flat", highlightthickness=1,
+        highlightbackground="gray", activestyle="none", font=("Courier", 10)
+    )
+    listbox.pack(fill="both", expand=True)
+
+    for his in history:
+        listbox.insert(tk.END, f"{his['name']:<20}  {his['path']}")
+
+    listbox.select_set(0)
+    listbox.activate(0)
+    listbox.focus_set()
+
+    def move_selection(offset):
+        cur = listbox.curselection()
+        if not cur:
+            return
+        idx = cur[0] + offset
+        if 0 <= idx < listbox.size():
+            listbox.select_clear(0, tk.END)
+            listbox.select_set(idx)
+            listbox.activate(idx)
+            listbox.see(idx)
+
+    def go_to_selected_hist(event=None):
+        sel = listbox.curselection()
+        if not sel:
+            return
+        his = history[sel[0]]
+        item = his["id"]
+        if tree.exists(item):
+            tree.selection_set(item)
+            tree.focus(item)
+            tree.see(item)
+            on_tree_select(None)
+        close_popup()
+
+    def close_popup(event=None):
+        popup.destroy()
+        window.focus_force()
+        select_tree()
+
+    # Navigation
+    listbox.bind("j", lambda e: move_selection(1))
+    listbox.bind("k", lambda e: move_selection(-1))
+    listbox.bind("<Return>", go_to_selected_hist)
+    listbox.bind("<Escape>", close_popup)
+    popup.bind("<Escape>", close_popup)
+
+    # gg/G navigation
+    def go_first(event=None):
+        listbox.select_clear(0, tk.END)
+        listbox.select_set(0)
+        listbox.activate(0)
+        listbox.see(0)
+    def go_last(event=None):
+        last = listbox.size() - 1
+        listbox.select_clear(0, tk.END)
+        listbox.select_set(last)
+        listbox.activate(last)
+        listbox.see(last)
+    popup.bind("g", lambda e: setattr(popup, "_gg", True) or "break")
+    popup.bind("g", lambda e: go_first() if getattr(popup, "_gg", False) else None)
+    popup.bind("G", go_last)
 
 
 # Mode, Labels, and UI
@@ -1350,6 +1445,8 @@ def on_tree_key(event):
             resize_tree(40)
         elif key == "bracketleft":   # [
             resize_tree(-40)
+        elif key == "less":  # <
+            open_history_dialog()
 
 def on_editor_key(event):
     global editor, tree, command_count, pending_command
@@ -1545,6 +1642,23 @@ def on_tree_select(event):
     item = selected[0]
     editor.delete(1.0, tk.END)
     parent = tree.parent(item)
+
+    entry = {
+        "id": item,
+        "name": tree.item(item, "text"),
+        "path": get_node_path(item)
+    }
+
+    existing = next((h for h in history if h["id"] == item), None)
+    if existing:
+        history.remove(existing)
+    # Insert at top (most recent first)
+    history.insert(0, entry)
+
+    # Optional: keep history list to a reasonable size (e.g., last 100 items)
+    if len(history) > 100:
+        del history[100:]
+
     if parent and tree.item(item, "values"):
         content = tree.item(item, "values")[0]
         editor.insert(tk.END, content)
