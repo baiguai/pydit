@@ -2102,14 +2102,27 @@ def export_to_html():
             with open(template_path, 'r', encoding='utf-8') as f:
                 html_template = f.read()
             
-            # Replace treeData in template
-            tree_data_json = json.dumps(tree_data, indent=2)
-            html_template = html_template.replace(
-                'let treeData = [', 
-                f'let treeData = {tree_data_json}'
-            )
-            # Remove empty array closing bracket if it exists
-            html_template = html_template.replace('];', '')
+            # Replace treeData in template using position-based replacement for more reliability
+            tree_data_json = json.dumps(tree_data, separators=(',', ':'))
+            import re
+            # Find the treeData array boundaries (non-greedy to stop at first closing bracket)
+            match = re.search(r'let treeData = (\[.*?\]);', html_template, re.DOTALL)
+            if match:
+                # Replace using string slicing for exact replacement
+                start_pos = match.start(1)  # Start of the array content
+                end_pos = match.end(1)      # End of the array content
+                new_html = (
+                    html_template[:start_pos] + 
+                    tree_data_json + 
+                    html_template[end_pos:]
+                )
+                html_template = new_html
+            else:
+                # Fallback to simple replacement if pattern not found
+                html_template = html_template.replace(
+                    'let treeData = [', 
+                    f'let treeData = {tree_data_json}'
+                )
         
         # Write HTML file
         with open(filepath, 'w', encoding='utf-8') as f:
