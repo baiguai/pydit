@@ -1079,6 +1079,7 @@ def add_folder():
 
     selected = tree.selection()
     parent = ""
+    parent_was_open = False
 
     if selected:
         sel = selected[0]
@@ -1092,11 +1093,17 @@ def add_folder():
         else:
             # folders → add inside (even if root)
             parent = sel
+            # Store parent's open state before adding child
+            parent_was_open = tree.item(parent, "open")
     else:
         parent = ""  # nothing selected → root-level
 
     # Insert new folder
     new_id = tree.insert(parent, tk.END, text="New Folder", open=True, tags=("folder",))
+
+    # If parent was collapsed, restore its collapsed state
+    if parent and not parent_was_open:
+        tree.item(parent, open=False)
 
     # Select and rename
     tree.selection_set(new_id)
@@ -1110,6 +1117,7 @@ def add_note():
 
     selected = tree.selection()
     parent = ""
+    parent_was_open = False
 
     if selected:
         sel = selected[0]
@@ -1123,11 +1131,17 @@ def add_note():
         else:
             # folder (even root) → inside it
             parent = sel
+            # Store parent's open state before adding child
+            parent_was_open = tree.item(parent, "open")
     else:
         parent = ""  # nothing selected → root-level
 
     # Insert new note (store empty content)
     new_id = tree.insert(parent, tk.END, text="New Note", values=("",), tags=("note",))
+
+    # If parent was collapsed, restore its collapsed state
+    if parent and not parent_was_open:
+        tree.item(parent, open=False)
 
     # Select and rename
     tree.selection_set(new_id)
