@@ -23,7 +23,7 @@ yank_buffer = ""
 visual_start = None
 visual_mode = None  # "char" or "line"
 
-tree_panel_width = 400
+tree_panel_width = 200
 last_directory = os.path.expanduser("~")  # Start with home directory
 config_file = os.path.join(os.path.expanduser("~"), ".pydit_config.json")
 
@@ -892,13 +892,13 @@ def openfile(window):
         
         # Check for tree width configuration
         if path == "__tree_width__" and not tree_width_loaded:
-            width_value = row.get("Content", "400").strip()
+            width_value = row.get("Content", "200").strip()
             try:
                 tree_panel_width = int(width_value)
                 tree.column("#0", width=tree_panel_width)
                 tree_width_loaded = True
             except ValueError:
-                tree_panel_width = 400
+                tree_panel_width = 200
             continue
             
         node_type = row.get("Type", "").strip()
@@ -1044,9 +1044,6 @@ def expand_or_enter():
         return
     item = selected[0]
 
-    if not is_folder(item):
-        return  # Notes can't be expanded or entered
-
     if tree.get_children(item):
         if not tree.item(item, "open"):
             tree.item(item, open=True)
@@ -1064,7 +1061,7 @@ def collapse_or_up():
         return
     item = selected[0]
 
-    if is_folder(item) and tree.get_children(item) and tree.item(item, "open"):
+    if tree.get_children(item) and tree.item(item, "open"):
         tree.item(item, open=False)
     else:
         parent = tree.parent(item)
@@ -1083,27 +1080,17 @@ def add_folder():
 
     if selected:
         sel = selected[0]
-        is_root = (tree.parent(sel) == "")
-        values = tree.item(sel, "values")
-        is_note = bool(values)  # notes have a content value tuple
-
-        if is_note:
-            # notes → sibling
-            parent = tree.parent(sel)
-        else:
-            # folders → add inside (even if root)
-            parent = sel
-            # Store parent's open state before adding child
-            parent_was_open = tree.item(parent, "open")
+        # Always create as child of selected node (note or folder)
+        parent = sel
+        # Store parent's open state before adding child
+        parent_was_open = tree.item(parent, "open")
+        # Ensure parent is open so we can see the new child
+        tree.item(parent, open=True)
     else:
         parent = ""  # nothing selected → root-level
 
     # Insert new folder
     new_id = tree.insert(parent, tk.END, text="New Folder", open=True, tags=("folder",))
-
-    # If parent was collapsed, restore its collapsed state
-    if parent and not parent_was_open:
-        tree.item(parent, open=False)
 
     # Select and rename
     tree.selection_set(new_id)
@@ -1121,27 +1108,17 @@ def add_note():
 
     if selected:
         sel = selected[0]
-        is_root = (tree.parent(sel) == "")
-        values = tree.item(sel, "values")
-        is_note = bool(values)
-
-        if is_note:
-            # note → sibling
-            parent = tree.parent(sel)
-        else:
-            # folder (even root) → inside it
-            parent = sel
-            # Store parent's open state before adding child
-            parent_was_open = tree.item(parent, "open")
+        # Always create as child of selected node (note or folder)
+        parent = sel
+        # Store parent's open state before adding child
+        parent_was_open = tree.item(parent, "open")
+        # Ensure parent is open so we can see the new child
+        tree.item(parent, open=True)
     else:
         parent = ""  # nothing selected → root-level
 
     # Insert new note (store empty content)
     new_id = tree.insert(parent, tk.END, text="New Note", values=("",), tags=("note",))
-
-    # If parent was collapsed, restore its collapsed state
-    if parent and not parent_was_open:
-        tree.item(parent, open=False)
 
     # Select and rename
     tree.selection_set(new_id)
@@ -1872,7 +1849,7 @@ def main():
     # Left side: treeview
     tree = ttk.Treeview(window, show="tree")
     tree.grid(row=0, column=0, sticky="nsew", columnspan=1)
-    tree.column("#0", width=400)  # adjust the width value as needed
+    tree.column("#0", width=200)  # adjust the width value as needed
     tree.bind("<<TreeviewSelect>>", on_tree_select)
 
     apply_dark_theme(tree)
