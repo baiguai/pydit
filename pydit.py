@@ -709,17 +709,44 @@ def resize_tree(amount):
     """Resize the tree panel and store the width in the current session."""
     global tree_panel_width
     
-    # Use the stored width as the current width
-    current_width = tree_panel_width
+    # Always get the actual current tree width
+    try:
+        current_width = int(tree.column("#0", option="width"))
+        # Sync our stored width with actual width
+        tree_panel_width = current_width
+        print(f"DEBUG: current_width={current_width}, amount={amount}")
+    except:
+        current_width = tree_panel_width  # fallback
 
     # Calculate desired width first
     desired_width = current_width + amount
     
-    # Apply bounds
-    new_width = max(10, min(800, desired_width))
+    # Apply bounds (much smaller minimum)
+    new_width = max(1, min(800, desired_width))
     
-    # Only update if the width actually changes AND we're not at a bound
-    if new_width != tree_panel_width and desired_width >= 10 and desired_width <= 800:
+    print(f"DEBUG: current_width={current_width}, amount={amount}, desired_width={desired_width}, new_width={new_width}")
+    print(f"DEBUG: tree_panel_width={tree_panel_width}, condition={(tree_panel_width > 1 and amount < 0) or (tree_panel_width < 800 and amount > 0)}")
+    
+    # Only update if we're not already at a bound
+    if (tree_panel_width > 1 and amount < 0) or (tree_panel_width < 800 and amount > 0):
+        print(f"DEBUG: UPDATING to {new_width}")
+        
+        # Force the grid cell to be the new width (this controls the actual visible width)
+        window.grid_columnconfigure(0, minsize=new_width, weight=0)
+        
+        # Make sure column 1 (editor) still expands to fill remaining space
+        window.grid_columnconfigure(1, weight=1)
+        
+        # Force geometry update
+        window.update_idletasks()
+        
+        # Try to set tree column width too (might not work for smaller sizes)
+        tree.column("#0", width=new_width)
+        
+        # Store for saving
+        tree_panel_width = new_width
+    else:
+        print(f"DEBUG: NOT UPDATING - at bound")
         # Update the tree column width
         tree.column("#0", width=new_width)
         
