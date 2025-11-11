@@ -1588,7 +1588,7 @@ def on_tree_key(event):
 
 def on_editor_key(event):
     global editor, tree, command_count, pending_command
-    global yank_buffer, visual_start, visual_mode, mode
+    global yank_buffer, visual_start, visual_mode, mode, last_key
 
     key = event.keysym
 
@@ -1700,7 +1700,13 @@ def on_editor_key(event):
         elif key == "w":
             move_word_forward(count)
         elif key == "b":
-            move_word_backward(count)
+            if last_key == "b":
+                # Second press - move back by word
+                move_word_backward(count)
+            else:
+                # First press - move back by character
+                move_cursor_left(count)
+            last_key = "b"
         elif key == "e":
             move_to_word_end(count)
         elif key == "0":
