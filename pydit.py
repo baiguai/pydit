@@ -709,30 +709,32 @@ def resize_tree(amount):
     """Resize the tree panel and store the width in the current session."""
     global tree_panel_width
     
-    # Get current width from the tree column
-    try:
-        current_width = int(tree.column("#0", option="width"))
-    except Exception:
-        current_width = 300  # default fallback
+    # Use the stored width as the current width
+    current_width = tree_panel_width
 
-    # Calculate new width with bounds
-    new_width = max(100, min(800, current_width + amount))
+    # Calculate desired width first
+    desired_width = current_width + amount
     
-    # Update the tree column width
-    tree.column("#0", width=new_width)
+    # Apply bounds
+    new_width = max(10, min(800, desired_width))
     
-    # Force the grid cell to match the new width
-    # Use minsize to set minimum size, and remove weight so it doesn't expand
-    window.grid_columnconfigure(0, minsize=new_width, weight=0)
-    
-    # Make sure column 1 (editor) still expands to fill remaining space
-    window.grid_columnconfigure(1, weight=1)
-    
-    # Force geometry update
-    window.update_idletasks()
-    
-    # Store for saving
-    tree_panel_width = new_width
+    # Only update if the width actually changes AND we're not at a bound
+    if new_width != tree_panel_width and desired_width >= 10 and desired_width <= 800:
+        # Update the tree column width
+        tree.column("#0", width=new_width)
+        
+        # Force the grid cell to match the new width
+        # Use minsize to set minimum size, and remove weight so it doesn't expand
+        window.grid_columnconfigure(0, minsize=new_width, weight=0)
+        
+        # Make sure column 1 (editor) still expands to fill remaining space
+        window.grid_columnconfigure(1, weight=1)
+        
+        # Force geometry update
+        window.update_idletasks()
+        
+        # Store for saving
+        tree_panel_width = new_width
 
 
 
@@ -850,13 +852,28 @@ def openfile(window):
 
     selected_path_to_find = ""
     node_path_map = {}
+    global tree_panel_width
 
     with open(filepath, newline='', encoding='utf-8') as f:
         reader = csv.DictReader(f)
         rows = list(reader)
 
+    # Load tree width from first row if available
+    tree_width_loaded = False
     for row in rows:
         path = row.get("Path", "").strip()
+        
+        # Check for tree width configuration
+        if path == "__tree_width__" and not tree_width_loaded:
+            width_value = row.get("Content", "400").strip()
+            try:
+                tree_panel_width = int(width_value)
+                tree.column("#0", width=tree_panel_width)
+                tree_width_loaded = True
+            except ValueError:
+                tree_panel_width = 400
+            continue
+            
         node_type = row.get("Type", "").strip()
         content = row.get("Content", "")
         expanded = row.get("Expanded", "").strip().lower() in ("1", "true", "yes")
@@ -952,7 +969,9 @@ def _write_to_csv(filepath):
 
     with open(filepath, "w", newline='', encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["Path", "Type", "Content", "Expanded", "Selected", "Bookmarked"])
+        writer.writerow(["Path", "Type", "Content", "Expanded", "Selected", "Bookmarked", "TreeWidth"])
+        # Add tree width as first row
+        rows.insert(0, ["__tree_width__", "config", str(tree_panel_width), "", "", "", ""])
         writer.writerows(rows)
 
 def move_tree_selection(direction):
@@ -1697,10 +1716,22 @@ def on_window_key(event):
         elif key == "v":
             set_mode("VISUAL")
             return "break"
+        elif key == "bracketleft":
+            resize_tree(-20)
+            return "break"
+        elif key == "bracketright":
+            resize_tree(20)
+            return "break"
 
     elif mode == "NORMAL":
         if key == "Escape":
             set_mode("TREE")
+            return "break"
+        elif key == "bracketleft":
+            resize_tree(-20)
+            return "break"
+        elif key == "bracketright":
+            resize_tree(20)
             return "break"
 
 
@@ -1776,7 +1807,7 @@ def main():
 
     # Left side: treeview
     tree = ttk.Treeview(window, show="tree")
-    tree.grid(row=0, column=0, sticky="ns", columnspan=1)
+    tree.grid(row=0, column=0, sticky="nsew", columnspan=1)
     tree.column("#0", width=400)  # adjust the width value as needed
     tree.bind("<<TreeviewSelect>>", on_tree_select)
 
@@ -1794,6 +1825,10 @@ def main():
     msg_label = tk.Label(window, text=f"", fg="white", bg="black")
     msg_label.grid(row=1, column=1, columnspan=2, sticky="w")
 
+    # Configure grid weights for proper resizing
+    window.grid_rowconfigure(0, weight=1)
+    window.grid_columnconfigure(0, minsize=tree_panel_width, weight=0)
+    window.grid_columnconfigure(1, weight=1)
 
     # Global key handling
     window.bind("<Key>", on_window_key)
