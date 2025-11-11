@@ -1,4 +1,5 @@
-Path,Type,Content,Expanded,Selected,Bookmarked
+Path,Type,Content,Expanded,Selected,Bookmarked,TreeWidth
+__tree_width__,config,580,,,,
 aaaaaa,folder,,0,False,0
 bbbbbb,folder,,1,False,0
 bbbbbb/cccccc,folder,,1,False,0

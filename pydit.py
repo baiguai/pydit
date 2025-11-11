@@ -709,30 +709,59 @@ def resize_tree(amount):
     """Resize the tree panel and store the width in the current session."""
     global tree_panel_width
     
-    # Get current width from the tree column
+    # Always get the actual current tree width
     try:
         current_width = int(tree.column("#0", option="width"))
-    except Exception:
-        current_width = 300  # default fallback
+        # Sync our stored width with actual width
+        tree_panel_width = current_width
+        print(f"DEBUG: current_width={current_width}, amount={amount}")
+    except:
+        current_width = tree_panel_width  # fallback
 
-    # Calculate new width with bounds
-    new_width = max(100, min(800, current_width + amount))
+    # Calculate desired width first
+    desired_width = current_width + amount
     
-    # Update the tree column width
-    tree.column("#0", width=new_width)
+    # Apply bounds (much smaller minimum)
+    new_width = max(1, min(800, desired_width))
     
-    # Force the grid cell to match the new width
-    # Use minsize to set minimum size, and remove weight so it doesn't expand
-    window.grid_columnconfigure(0, minsize=new_width, weight=0)
+    print(f"DEBUG: current_width={current_width}, amount={amount}, desired_width={desired_width}, new_width={new_width}")
+    print(f"DEBUG: tree_panel_width={tree_panel_width}, condition={(tree_panel_width > 1 and amount < 0) or (tree_panel_width < 800 and amount > 0)}")
     
-    # Make sure column 1 (editor) still expands to fill remaining space
-    window.grid_columnconfigure(1, weight=1)
-    
-    # Force geometry update
-    window.update_idletasks()
-    
-    # Store for saving
-    tree_panel_width = new_width
+    # Only update if we're not already at a bound
+    if (tree_panel_width > 1 and amount < 0) or (tree_panel_width < 800 and amount > 0):
+        print(f"DEBUG: UPDATING to {new_width}")
+        
+        # Force the grid cell to be the new width (this controls the actual visible width)
+        window.grid_columnconfigure(0, minsize=new_width, weight=0)
+        
+        # Make sure column 1 (editor) still expands to fill remaining space
+        window.grid_columnconfigure(1, weight=1)
+        
+        # Force geometry update
+        window.update_idletasks()
+        
+        # Try to set tree column width too (might not work for smaller sizes)
+        tree.column("#0", width=new_width)
+        
+        # Store for saving
+        tree_panel_width = new_width
+    else:
+        print(f"DEBUG: NOT UPDATING - at bound")
+        # Update the tree column width
+        tree.column("#0", width=new_width)
+        
+        # Force the grid cell to match the new width
+        # Use minsize to set minimum size, and remove weight so it doesn't expand
+        window.grid_columnconfigure(0, minsize=new_width, weight=0)
+        
+        # Make sure column 1 (editor) still expands to fill remaining space
+        window.grid_columnconfigure(1, weight=1)
+        
+        # Force geometry update
+        window.update_idletasks()
+        
+        # Store for saving
+        tree_panel_width = new_width
 
 
 
@@ -850,13 +879,28 @@ def openfile(window):
 
     selected_path_to_find = ""
     node_path_map = {}
+    global tree_panel_width
 
     with open(filepath, newline='', encoding='utf-8') as f:
         reader = csv.DictReader(f)
         rows = list(reader)
 
+    # Load tree width from first row if available
+    tree_width_loaded = False
     for row in rows:
         path = row.get("Path", "").strip()
+        
+        # Check for tree width configuration
+        if path == "__tree_width__" and not tree_width_loaded:
+            width_value = row.get("Content", "400").strip()
+            try:
+                tree_panel_width = int(width_value)
+                tree.column("#0", width=tree_panel_width)
+                tree_width_loaded = True
+            except ValueError:
+                tree_panel_width = 400
+            continue
+            
         node_type = row.get("Type", "").strip()
         content = row.get("Content", "")
         expanded = row.get("Expanded", "").strip().lower() in ("1", "true", "yes")
@@ -952,7 +996,9 @@ def _write_to_csv(filepath):
 
     with open(filepath, "w", newline='', encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["Path", "Type", "Content", "Expanded", "Selected", "Bookmarked"])
+        writer.writerow(["Path", "Type", "Content", "Expanded", "Selected", "Bookmarked", "TreeWidth"])
+        # Add tree width as first row
+        rows.insert(0, ["__tree_width__", "config", str(tree_panel_width), "", "", "", ""])
         writer.writerows(rows)
 
 def move_tree_selection(direction):
@@ -1146,7 +1192,7 @@ def open_help_dialog():
         return
 
     help_popup = tk.Toplevel(window)
-    help_popup.configure(bg="black", bd=1, highlightthickness=1, highlightbackground="gray")
+    help_popup.configure(bg="gray", bd=1, highlightthickness=1, highlightbackground="gray")
     help_popup.overrideredirect(True)
     help_popup.transient(window)
     help_popup.grab_set()
@@ -1168,91 +1214,108 @@ def open_help_dialog():
     help_popup.geometry(f"{width}x{height}+{x}+{y}")
 
     container = tk.Frame(help_popup, bg="black")
-    container.pack(fill="both", expand=True, padx=6, pady=6)
+    container.pack(fill="both", expand=True, padx=2, pady=2)
 
-    tk.Label(container, text="Key Bindings", fg="white", bg="black",
-             font=("Courier", 12, "bold"), anchor="w").pack(anchor="w", pady=(0, 5))
+    tk.Label(container, text="Key Bindings:", bg="black", fg="white", anchor="w").pack(anchor="w", padx=2, pady=(2, 0))
 
-    # Frame to hold listbox + scrollbar
-    scroll_frame = tk.Frame(container, bg="black")
-    scroll_frame.pack(fill="both", expand=True)
-    
-    scrollbar = tk.Scrollbar(scroll_frame, orient="vertical")
-    scrollbar.pack(side="right", fill="y")
-    
-    listbox = tk.Listbox(
-        scroll_frame,
+    help_search_var = tk.StringVar()
+    entry = tk.Entry(
+        container,
+        textvariable=help_search_var,
         bg="black",
         fg="white",
+        insertbackground="white",
         relief="flat",
+        highlightthickness=1,
+        highlightbackground="gray",
+        highlightcolor="white",
+        borderwidth=1,
+        font=("Courier", 10)
+    )
+    entry.pack(fill="x", padx=2, pady=(0, 2))
+    entry.focus_set()
+    
+    listbox = tk.Listbox(
+        container,
+        bg="black",
+        fg="white",
         selectbackground="#333",
-        font=("Courier", 10),
+        selectforeground="white",
+        relief="flat",
         highlightthickness=1,
         highlightbackground="gray",
         activestyle="none",
-        yscrollcommand=scrollbar.set
+        font=("Courier", 10)
     )
-    listbox.pack(fill="both", expand=True)
-    scrollbar.config(command=listbox.yview)
-    listbox.focus_set()
+    listbox.pack(fill="both", expand=True, padx=2, pady=(0, 2))
 
-    # Header row
-    header = f"{'KEY':<12} {'MODE':<8} DESCRIPTION"
-    listbox.insert(tk.END, header)
-    listbox.insert(tk.END, "-" * 60)
-    
-    # Items
-    for h in help_entries:
-        entry = f"{h['key']:<12} {h['mode']:<8} {h['description']}"
-        listbox.insert(tk.END, entry)
-    
-    # Highlight header rows
-    listbox.itemconfig(0, {'fg': 'cyan'})
-    listbox.itemconfig(1, {'fg': 'gray'})
-    
-    # Initial selection (first actual entry, skipping header)
-    if listbox.size() > 2:
-        listbox.select_set(2)
-        listbox.activate(2)
-        listbox.see(2)
+    def update_help_results(*args):
+        query = help_search_var.get().strip()
+        listbox.delete(0, tk.END)
+
+        key_only = False
+        if query.startswith(":"):
+            key_only = True
+            query = query[1:].strip().lower()
+        else:
+            query = query.lower()
+
+        # Filter help entries
+        filtered_entries = []
+        for h in help_entries:
+            if key_only:
+                match = query in h['key'].lower()
+            else:
+                match = (query in h['key'].lower() or 
+                        query in h['description'].lower() or
+                        query in h['mode'].lower())
+            
+            if match:
+                filtered_entries.append(h)
+        
+        # Items
+        for h in filtered_entries:
+            entry = f"{h['key']:<12} {h['mode']:<8} {h['description']}"
+            listbox.insert(tk.END, entry)
+        
+        # Initial selection
+        if listbox.size() > 0:
+            listbox.select_set(0)
+            listbox.activate(0)
+            listbox.see(0)
+
+    def close_help_dialog(event=None):
+        global help_popup
+        if help_popup:
+            help_popup.destroy()
+        help_popup = None
+        window.focus_force()
+        select_tree()
     
     def move_selection(offset):
         cur = listbox.curselection()
         if not cur:
-            idx = 2
+            idx = 0
         else:
             idx = cur[0] + offset
-        if idx < 2:
-            idx = 2
+        if idx < 0:
+            idx = 0
         elif idx >= listbox.size():
             idx = listbox.size() - 1
         listbox.select_clear(0, tk.END)
         listbox.select_set(idx)
         listbox.activate(idx)
         listbox.see(idx)
+        return "break"
     
-    # Navigation keys
-    help_popup.bind("j", lambda e: move_selection(1))
-    help_popup.bind("k", lambda e: move_selection(-1))
+    # Bindings
+    help_search_var.trace_add("write", update_help_results)
+    help_popup.bind("<Escape>", close_help_dialog)
     help_popup.bind("<Down>", lambda e: move_selection(1))
     help_popup.bind("<Up>", lambda e: move_selection(-1))
     
-    # Close on Escape (from anywhere)
-    help_popup.bind("<Escape>", lambda e: close_help_dialog())
-    window.bind("<Escape>", lambda e: close_help_dialog())
-    
-    def close_help_dialog():
-        global help_popup
-        try:
-            if help_popup and help_popup.winfo_exists():
-                help_popup.destroy()
-        except Exception:
-            pass
-        help_popup = None
-        # Unbind the Escape key used to close help
-        window.unbind("<Escape>")
-        window.focus_force()
-        select_tree()
+    # Initial population
+    update_help_results()
 
 
 
@@ -1697,10 +1760,22 @@ def on_window_key(event):
         elif key == "v":
             set_mode("VISUAL")
             return "break"
+        elif key == "bracketleft":
+            resize_tree(-20)
+            return "break"
+        elif key == "bracketright":
+            resize_tree(20)
+            return "break"
 
     elif mode == "NORMAL":
         if key == "Escape":
             set_mode("TREE")
+            return "break"
+        elif key == "bracketleft":
+            resize_tree(-20)
+            return "break"
+        elif key == "bracketright":
+            resize_tree(20)
             return "break"
 
 
@@ -1776,7 +1851,7 @@ def main():
 
     # Left side: treeview
     tree = ttk.Treeview(window, show="tree")
-    tree.grid(row=0, column=0, sticky="ns", columnspan=1)
+    tree.grid(row=0, column=0, sticky="nsew", columnspan=1)
     tree.column("#0", width=400)  # adjust the width value as needed
     tree.bind("<<TreeviewSelect>>", on_tree_select)
 
@@ -1794,6 +1869,10 @@ def main():
     msg_label = tk.Label(window, text=f"", fg="white", bg="black")
     msg_label.grid(row=1, column=1, columnspan=2, sticky="w")
 
+    # Configure grid weights for proper resizing
+    window.grid_rowconfigure(0, weight=1)
+    window.grid_columnconfigure(0, minsize=tree_panel_width, weight=0)
+    window.grid_columnconfigure(1, weight=1)
 
     # Global key handling
     window.bind("<Key>", on_window_key)
