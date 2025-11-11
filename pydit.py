@@ -1279,9 +1279,15 @@ def move_to_line_start():
 def move_to_line_end(count=1):
     if count > 1:
         move_cursor_down(count - 1)
-    line_index = editor.index("insert").split(".")[0]
-    editor.mark_set("insert", f"{line_index}.end")
+    
+    # Get current line and move to end
+    current_index = editor.index("insert")
+    line_num = current_index.split(".")[0]
+    end_position = f"{line_num}.end"
+    
+    editor.mark_set("insert", end_position)
     editor.see("insert")
+    
     if mode == "VISUAL":
         update_visual_selection()
 
@@ -1636,7 +1642,14 @@ def on_editor_key(event):
             move_to_word_end(count)
         elif key == "0":
             move_to_line_start()
+        elif key == "<Shift-4>":
+            print(f"DEBUG: Shift-4 key detected, calling move_to_line_end()")
+            move_to_line_end()
+        elif key == "dollar":
+            move_to_line_end()
         elif key == "$":
+            move_to_line_end()
+        elif key == "<Shift-4>":
             move_to_line_end()
         elif key == "G":
             move_to_end_of_file()

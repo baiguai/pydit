@@ -1,8 +1,10 @@
-Path,Type,Content,Expanded,Selected
-aaaaaa,folder,,0,True
-bbbbbb,folder,,1,False
-bbbbbb/cccccc,folder,,1,False
-bbbbbb/cccccc/dddddd,folder,,1,False
-bbbbbb/cccccc/dddddd/xxxxxx,folder,,0,False
-bbbbbb/lkjkljjklljkj,folder,,1,False
-bbbbbb/lkjkljjklljkj/eeeee,folder,,0,False
+Path,Type,Content,Expanded,Selected,Bookmarked
+aaaaaa,folder,,0,False,0
+bbbbbb,folder,,1,False,0
+bbbbbb/cccccc,folder,,1,False,0
+bbbbbb/cccccc/dddddd,folder,,1,False,0
+bbbbbb/cccccc/dddddd/xxxxxx,note,"xxxxxx
+
+xxxx x xxxxxx xxx xx xxxxxxx x x xxxxxx x",0,True,0
+bbbbbb/lkjkljjklljkj,folder,,1,False,0
+bbbbbb/lkjkljjklljkj/eeeee,folder,,0,False,0
