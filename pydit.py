@@ -21,6 +21,8 @@ yank_buffer = ""
 visual_start = None
 visual_mode = None  # "char" or "line"
 
+tree_panel_width = 400
+
 
 
 # Help Topics
@@ -521,10 +523,11 @@ def open_bookmarks_dialog():
             listbox.see(idx)
 
     def go_to_selected(event=None):
+        sel = listbox.curselection()
         if not sel:
             return
-        his = history[sel[0]]
-        item = his["id"]
+        bm = bookmarks[sel[0]]
+        item = bm["id"]
         if tree.exists(item):
             tree.selection_set(item)
             tree.focus(item)
@@ -669,7 +672,33 @@ def show_msg(msg_text):
     msg_label.after(2000, clear_msg)
 
 def resize_tree(amount):
-    tree.column("#0", width=(tree.column("#0")['width'])+amount)
+    """Resize the tree panel and store the width in the current session."""
+    global tree_panel_width
+    
+    # Get current width from the tree column
+    try:
+        current_width = int(tree.column("#0", option="width"))
+    except Exception:
+        current_width = 300  # default fallback
+
+    # Calculate new width with bounds
+    new_width = max(100, min(800, current_width + amount))
+    
+    # Update the tree column width
+    tree.column("#0", width=new_width)
+    
+    # Force the grid cell to match the new width
+    # Use minsize to set minimum size, and remove weight so it doesn't expand
+    window.grid_columnconfigure(0, minsize=new_width, weight=0)
+    
+    # Make sure column 1 (editor) still expands to fill remaining space
+    window.grid_columnconfigure(1, weight=1)
+    
+    # Force geometry update
+    window.update_idletasks()
+    
+    # Store for saving
+    tree_panel_width = new_width
 
 
 
@@ -1681,8 +1710,9 @@ def main():
     global tree, editor, mode_label, msg_label, window, quitting
 
     window = tk.Tk()
+    window.attributes('-zoomed', True)
     window.title("Pydit")
-    window.geometry("800x500")
+    # window.geometry("800x500")
     window.configure(bg="black")
 
     window.columnconfigure(1, weight=1)
@@ -1707,6 +1737,7 @@ def main():
     # Message label
     msg_label = tk.Label(window, text=f"", fg="white", bg="black")
     msg_label.grid(row=1, column=1, columnspan=2, sticky="w")
+
 
     # Global key handling
     window.bind("<Key>", on_window_key)
