@@ -30,20 +30,26 @@ config_file = os.path.join(os.path.expanduser("~"), ".pydit_config.json")
 
 # Directory persistence functions
 def load_config():
-    """Load configuration including last used directory."""
-    global last_directory
+    """Load configuration including last used directory and file."""
+    global last_directory, current_file
     try:
         if os.path.exists(config_file):
             with open(config_file, 'r') as f:
                 config = json.load(f)
                 last_directory = config.get('last_directory', os.path.expanduser("~"))
+                current_file = config.get('last_file', None)
     except Exception:
         last_directory = os.path.expanduser("~")
+        current_file = None
+        current_file = None
 
 def save_config():
-    """Save configuration including last used directory."""
+    """Save configuration including last used directory and file."""
     try:
-        config = {'last_directory': last_directory}
+        config = {
+            'last_directory': last_directory,
+            'last_file': current_file
+        }
         with open(config_file, 'w') as f:
             json.dump(config, f)
     except Exception:
@@ -714,7 +720,6 @@ def resize_tree(amount):
         current_width = int(tree.column("#0", option="width"))
         # Sync our stored width with actual width
         tree_panel_width = current_width
-        print(f"DEBUG: current_width={current_width}, amount={amount}")
     except:
         current_width = tree_panel_width  # fallback
 
@@ -724,15 +729,11 @@ def resize_tree(amount):
     # Apply bounds (much smaller minimum)
     new_width = max(1, min(800, desired_width))
     
-    print(f"DEBUG: current_width={current_width}, amount={amount}, desired_width={desired_width}, new_width={new_width}")
-    print(f"DEBUG: tree_panel_width={tree_panel_width}, condition={(tree_panel_width > 1 and amount < 0) or (tree_panel_width < 800 and amount > 0)}")
-    
     # Only update if we're not already at a bound
     if (tree_panel_width > 1 and amount < 0) or (tree_panel_width < 800 and amount > 0):
-        print(f"DEBUG: UPDATING to {new_width}")
-        
-        # Force the grid cell to be the new width (this controls the actual visible width)
+        # Control both grid container and tree column
         window.grid_columnconfigure(0, minsize=new_width, weight=0)
+        tree.column("#0", width=new_width, minwidth=1)
         
         # Make sure column 1 (editor) still expands to fill remaining space
         window.grid_columnconfigure(1, weight=1)
@@ -740,19 +741,12 @@ def resize_tree(amount):
         # Force geometry update
         window.update_idletasks()
         
-        # Try to set tree column width too (might not work for smaller sizes)
-        tree.column("#0", width=new_width)
-        
         # Store for saving
         tree_panel_width = new_width
     else:
-        print(f"DEBUG: NOT UPDATING - at bound")
-        # Update the tree column width
-        tree.column("#0", width=new_width)
-        
-        # Force the grid cell to match the new width
-        # Use minsize to set minimum size, and remove weight so it doesn't expand
+        # Control both grid container and tree column
         window.grid_columnconfigure(0, minsize=new_width, weight=0)
+        tree.column("#0", width=new_width, minwidth=1)
         
         # Make sure column 1 (editor) still expands to fill remaining space
         window.grid_columnconfigure(1, weight=1)
@@ -896,6 +890,8 @@ def openfile(window):
             try:
                 tree_panel_width = int(width_value)
                 tree.column("#0", width=tree_panel_width)
+                # Update grid column minsize to match loaded tree width
+                window.grid_columnconfigure(0, minsize=tree_panel_width, weight=0)
                 tree_width_loaded = True
             except ValueError:
                 tree_panel_width = 200
@@ -952,6 +948,129 @@ def openfile(window):
 
     set_mode("TREE")
     select_tree()
+    
+    # Force tree column width to match loaded width (important for proper resizing)
+    tree.column("#0", width=tree_panel_width, minwidth=1)
+    
+    # Try to "unlock" the minimum by temporarily setting to a smaller width
+    tree.column("#0", width=50, minwidth=1)
+    window.update_idletasks()
+    
+    # Then set it back to the loaded width
+    tree.column("#0", width=tree_panel_width, minwidth=1)
+    window.update_idletasks()
+
+def silent_load_file(filepath):
+    """Load a file without showing the open file dialog."""
+    global current_file, last_directory
+
+    if not os.path.exists(filepath):
+        return False
+
+    apply_dark_theme(tree)
+
+    # Clear everything
+    for item in tree.get_children():
+        tree.delete(item)
+    editor.delete(1.0, tk.END)
+
+    current_file = filepath
+    window.title(f"Pydit - {filepath}")
+    
+    # Update and save last directory
+    last_directory = os.path.dirname(filepath)
+    save_config()
+
+    selected_path_to_find = ""
+    node_path_map = {}
+    global tree_panel_width
+
+    with open(filepath, newline='', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+
+    # Load tree width from first row if available
+    tree_width_loaded = False
+    for row in rows:
+        path = row.get("Path", "").strip()
+        
+        # Check for tree width configuration
+        if path == "__tree_width__" and not tree_width_loaded:
+            width_value = row.get("Content", "200").strip()
+            try:
+                tree_panel_width = int(width_value)
+                tree.column("#0", width=tree_panel_width)
+                # Update grid column minsize to match loaded tree width
+                window.grid_columnconfigure(0, minsize=tree_panel_width, weight=0)
+                tree_width_loaded = True
+            except ValueError:
+                tree_panel_width = 200
+            continue
+            
+        node_type = row.get("Type", "").strip()
+        content = row.get("Content", "")
+        expanded = row.get("Expanded", "").strip().lower() in ("1", "true", "yes")
+        selected = row.get("Selected", "").strip().lower() in ("1", "true", "yes")
+        bookmarked = str(row.get("Bookmarked", "") or "").strip().lower() in ("1", "true", "yes")
+
+        if not path:
+            continue
+
+        parts = path.split("/")
+        name = parts[-1]
+        parent_id = ""
+
+        # Traverse the path to find/create parents
+        for depth, part in enumerate(parts[:-1]):
+            partial_path = "/".join(parts[:depth + 1])
+            if partial_path not in node_path_map:
+                parent_parent = "/".join(parts[:depth]) if depth > 0 else ""
+                parent_node = node_path_map.get(parent_parent, "")
+                node_id = tree.insert(parent_node, tk.END, text=part, open=True)
+                node_path_map[partial_path] = node_id
+
+        # Insert the final node
+        parent_path = "/".join(parts[:-1])
+        parent_id = node_path_map.get(parent_path, "")
+        if node_type == "folder":
+            node_id = tree.insert(parent_id, tk.END, text=name, open=expanded, tags=("folder",))
+        else:  # note
+            node_id = tree.insert(parent_id, tk.END, text=name, values=(content,), tags=("note",))
+        node_path_map[path] = node_id
+
+        if bookmarked:
+            tags = list(tree.item(node_id, "tags"))
+            tags.append("bookmarked")
+            tree.item(node_id, tags=tags)
+
+        if selected:
+            selected_path_to_find = path
+
+    # Restore selection
+    if selected_path_to_find and selected_path_to_find in node_path_map:
+        target_id = node_path_map[selected_path_to_find]
+        tree.selection_set(target_id)
+        tree.focus(target_id)
+        tree.see(target_id)
+        on_tree_select(None)
+
+    refresh_bookmarks_cache()
+
+    set_mode("TREE")
+    select_tree()
+    
+    # Force tree column width to match loaded width (important for proper resizing)
+    tree.column("#0", width=tree_panel_width, minwidth=1)
+    
+    # Try to "unlock" the minimum by temporarily setting to a smaller width
+    tree.column("#0", width=50, minwidth=1)
+    window.update_idletasks()
+    
+    # Then set it back to the loaded width
+    tree.column("#0", width=tree_panel_width, minwidth=1)
+    window.update_idletasks()
+    
+    return True
 
 def _write_to_csv(filepath):
     rows = []
@@ -1080,7 +1199,7 @@ def add_folder():
 
     if selected:
         sel = selected[0]
-        # Always create as child of selected node (note or folder)
+        # 'A' creates folder as child of selected node
         parent = sel
         # Store parent's open state before adding child
         parent_was_open = tree.item(parent, "open")
@@ -1099,21 +1218,16 @@ def add_folder():
     rename_selected_node()
 
 def add_note():
-    """Create a new note under the selected item (or at root) and trigger rename."""
+    """Create a new note as sibling of selected item (or at root) and trigger rename."""
     global tree
 
     selected = tree.selection()
     parent = ""
-    parent_was_open = False
 
     if selected:
         sel = selected[0]
-        # Always create as child of selected node (note or folder)
-        parent = sel
-        # Store parent's open state before adding child
-        parent_was_open = tree.item(parent, "open")
-        # Ensure parent is open so we can see the new child
-        tree.item(parent, open=True)
+        # 'a' creates note as sibling of selected node
+        parent = tree.parent(sel)
     else:
         parent = ""  # nothing selected → root-level
 
@@ -1703,7 +1817,6 @@ def on_editor_key(event):
         elif key == "0":
             move_to_line_start()
         elif key == "<Shift-4>":
-            print(f"DEBUG: Shift-4 key detected, calling move_to_line_end()")
             move_to_line_end()
         elif key == "dollar":
             move_to_line_end()
@@ -1849,7 +1962,7 @@ def main():
     # Left side: treeview
     tree = ttk.Treeview(window, show="tree")
     tree.grid(row=0, column=0, sticky="nsew", columnspan=1)
-    tree.column("#0", width=200)  # adjust the width value as needed
+    tree.column("#0", width=tree_panel_width)  # use loaded width instead of hardcoded 200
     tree.bind("<<TreeviewSelect>>", on_tree_select)
 
     apply_dark_theme(tree)
@@ -1881,6 +1994,12 @@ def main():
     editor.bind("<Button-1>", on_editor_click)
     tree.bind("<Button-1>", on_tree_click)
 
+    # Auto-open last file if it exists
+    if current_file and os.path.exists(current_file):
+        silent_load_file(current_file)
+    
+    # Tree column width is now controlled by tree.column() only
+    
     window.after(100, select_tree)
 
     window.mainloop()
