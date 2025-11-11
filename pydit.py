@@ -2103,7 +2103,27 @@ def export_to_html():
                 html_template = f.read()
             
             # Replace treeData in template using position-based replacement for more reliability
-            tree_data_json = json.dumps(tree_data, separators=(',', ':'))
+            # Format JSON with line breaks for readability
+            def format_json_with_breaks(obj, max_chars_per_line=500):
+                """Format JSON with line breaks to keep lines manageable."""
+                raw = json.dumps(obj, separators=(',', ':'))
+                
+                # If content is short, return as-is
+                if len(raw) <= max_chars_per_line:
+                    return raw
+                
+                # For longer content, add line breaks after each object in array
+                formatted = raw.replace('},{', '},\n{')
+                
+                # Add line breaks after opening bracket and before closing bracket
+                if formatted.startswith('[{'):
+                    formatted = '[\n{' + formatted[2:]
+                if formatted.endswith('}]'):
+                    formatted = formatted[:-2] + '\n}]'
+                
+                return formatted
+            
+            tree_data_json = format_json_with_breaks(tree_data)
             import re
             # Find the treeData array boundaries (non-greedy to stop at first closing bracket)
             match = re.search(r'let treeData = (\[.*?\]);', html_template, re.DOTALL)
