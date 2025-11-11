@@ -3,6 +3,8 @@ from tkinter import ttk
 from tkinter.filedialog import askopenfilename, asksaveasfilename
 import csv
 import re, os, webbrowser
+import json
+import json
 
 current_file = None
 last_key = ""
@@ -22,6 +24,32 @@ visual_start = None
 visual_mode = None  # "char" or "line"
 
 tree_panel_width = 400
+last_directory = os.path.expanduser("~")  # Start with home directory
+config_file = os.path.join(os.path.expanduser("~"), ".pydit_config.json")
+
+
+# Directory persistence functions
+def load_config():
+    """Load configuration including last used directory."""
+    global last_directory
+    try:
+        if os.path.exists(config_file):
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+                last_directory = config.get('last_directory', os.path.expanduser("~"))
+    except Exception:
+        last_directory = os.path.expanduser("~")
+
+def save_config():
+    """Save configuration including last used directory."""
+    try:
+        config = {'last_directory': last_directory}
+        with open(config_file, 'w') as f:
+            json.dump(config, f)
+    except Exception:
+        pass
+last_directory = os.path.expanduser("~")  # Start with home directory
+config_file = os.path.join(os.path.expanduser("~"), ".pydit_config.json")
 
 
 
@@ -109,14 +137,20 @@ def savefile():
     show_msg(f"Saved to {current_file}")
 
 def savefile_as():
-    global current_file
+    global current_file, last_directory
     filepath = asksaveasfilename(defaultextension=".pyd",
+                                 initialdir=last_directory,
                                  filetypes=[("Pydit Files", "*.pyd"), ("CSV Files", "*.csv")])
     if not filepath:
         return
 
     _write_to_csv(filepath)
     current_file = filepath
+    
+    # Update and save last directory
+    last_directory = os.path.dirname(filepath)
+    save_config()
+    
     show_msg(f"Saved As {filepath}")
 
 def quit_app():
@@ -794,8 +828,9 @@ def select_tree():
         window.after(10, lambda: (tree.focus(item), tree.focus_set()))
 
 def openfile(window):
-    global current_file
-    filepath = askopenfilename(filetypes=[("Pydit Files", "*.pyd"), ("CSV Files", "*.csv")])
+    global current_file, last_directory
+    filepath = askopenfilename(initialdir=last_directory,
+                              filetypes=[("Pydit Files", "*.pyd"), ("CSV Files", "*.csv")])
     if not filepath:
         return
 
@@ -808,6 +843,10 @@ def openfile(window):
 
     current_file = filepath
     window.title(f"Pydit - {filepath}")
+    
+    # Update and save last directory
+    last_directory = os.path.dirname(filepath)
+    save_config()
 
     selected_path_to_find = ""
     node_path_map = {}
@@ -1238,7 +1277,8 @@ def move_to_line_start():
     editor.mark_set("insert", "insert linestart")
 
 def move_to_line_end(count=1):
-    move_cursor_down(count - 1)
+    if count > 1:
+        move_cursor_down(count - 1)
     line_index = editor.index("insert").split(".")[0]
     editor.mark_set("insert", f"{line_index}.end")
     editor.see("insert")
@@ -1708,6 +1748,9 @@ def apply_dark_theme(tree):
 
 def main():
     global tree, editor, mode_label, msg_label, window, quitting
+
+    # Load configuration including last directory
+    load_config()
 
     window = tk.Tk()
     window.attributes('-zoomed', True)
