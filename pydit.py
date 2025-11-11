@@ -89,6 +89,8 @@ help_entries = [
     {"key": "`", "mode": "TREE", "description": "Show bookmarks dialog"},
 
     {"key": "<", "mode": "TREE", "description": "Show history dialog"},
+    {"key": "X", "mode": "TREE", "description": "Import from HTML file"},
+    {"key": "x", "mode": "TREE", "description": "Export to HTML file"},
 
 
     # --- NORMAL MODE ---
@@ -1567,7 +1569,7 @@ def yank_current_line(n=1):
     end = editor.index(f"{start} +{n}lines")
     yank_buffer = editor.get(start, end)
 
-def delete_current_line(n=1):
+def delete_line(n=1):
     global yank_buffer
     start = editor.index("insert linestart")
     end = editor.index(f"{start} +{n}lines")
@@ -1690,6 +1692,10 @@ def on_tree_key(event):
             resize_tree(-40)
         elif key == "less":  # <
             open_history_dialog()
+        elif key == "X":  # Import from HTML
+            import_from_html()
+        elif key == "x":  # Export to HTML
+            export_to_html()
 
 def on_editor_key(event):
     global editor, tree, command_count, pending_command
@@ -1775,7 +1781,7 @@ def on_editor_key(event):
                 return "break"
 
             elif combo == "dd" and mode == "NORMAL":
-                delete_current_line(count)
+                delete_line(count)
                 return "break"
 
             elif combo == "dw" and mode == "NORMAL":
@@ -1944,6 +1950,180 @@ def apply_dark_theme(tree):
     tree.tag_configure("note", foreground="#cccccc", font=("Courier", 10, "normal"))
     tree.tag_configure("bookmarked", foreground="#FFD700")
 
+def import_from_html():
+    """Import notes from HTML file with JavaScript treeData format."""
+    global current_file, last_directory, tree, editor
+    
+    filepath = askopenfilename(initialdir=last_directory,
+                              filetypes=[("HTML Files", "*.html"), ("All Files", "*.*")])
+    if not filepath:
+        return
+    
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Extract treeData from JavaScript
+        # Look for: let treeData = [...];
+        start_marker = "let treeData = ["
+        end_marker = "];"
+        
+        start_idx = content.find(start_marker)
+        if start_idx == -1:
+            show_msg("No treeData found in HTML file")
+            return
+        
+        start_idx += len(start_marker) - 1  # Include opening bracket
+        end_idx = content.find(end_marker, start_idx)
+        if end_idx == -1:
+            show_msg("Invalid treeData format in HTML file")
+            return
+        
+        tree_data_str = content[start_idx:end_idx + 1]  # Include closing bracket
+        
+        # Parse JSON
+        try:
+            tree_data = json.loads(tree_data_str)
+        except json.JSONDecodeError as e:
+            show_msg(f"Error parsing treeData: {e}")
+            return
+        
+        # Clear current tree
+        for item in tree.get_children():
+            tree.delete(item)
+        editor.delete(1.0, tk.END)
+        
+        # Convert treeData to Python tree structure
+        def add_node(parent_id, node_data, path=""):
+            title = node_data.get('title', 'Untitled')
+            content = node_data.get('content', '')
+            children = node_data.get('children', [])
+            expanded = node_data.get('expanded', False)
+            
+            # Build path for this node
+            current_path = f"{path}/{title}" if path else title
+            
+            # Determine if it's a folder (empty content) or note
+            if content.strip() == '':
+                node_type = "folder"
+                values = ()
+            else:
+                node_type = "note"
+                values = (content,)
+            
+            # Insert into tree
+            new_id = tree.insert(parent_id, tk.END, text=title, values=values, 
+                             open=expanded, tags=(node_type,))
+            
+            # Recursively add children
+            for child in children:
+                add_node(new_id, child, current_path)
+        
+        # Add all root nodes
+        for root_node in tree_data:
+            add_node("", root_node)
+        
+        # Update file info
+        current_file = None  # Not a .pyd file anymore
+        last_directory = os.path.dirname(filepath)
+        save_config()
+        
+        show_msg(f"Imported {len(tree_data)} root nodes from {os.path.basename(filepath)}")
+        refresh_bookmarks_cache()
+        
+    except Exception as e:
+        show_msg(f"Error importing HTML: {e}")
+
+def export_to_html():
+    """Export notes to HTML file with JavaScript treeData format."""
+    global last_directory, tree
+    
+    filepath = asksaveasfilename(defaultextension=".html",
+                             initialdir=last_directory,
+                             filetypes=[("HTML Files", "*.html"), ("All Files", "*.*")])
+    if not filepath:
+        return
+    
+    try:
+        # Convert Python tree to treeData format
+        def tree_to_treedata(parent_id=""):
+            result = []
+            
+            for item in tree.get_children(parent_id):
+                text = tree.item(item, "text")
+                values = tree.item(item, "values")
+                content = values[0] if values and len(values) > 0 else ""
+                expanded = tree.item(item, "open")
+                tags = tree.item(item, "tags")
+                bookmarked = "bookmarked" in tags if tags else False
+                
+                # Create node object
+                node_data = {
+                    "id": str(item),  # Use tree item ID as string
+                    "title": text,
+                    "content": content,
+                    "children": tree_to_treedata(item),
+                    "expanded": expanded
+                }
+                
+                result.append(node_data)
+            
+            return result
+        
+        # Generate treeData
+        tree_data = tree_to_treedata()
+        
+        # Read HTML template
+        template_path = os.path.join(os.path.dirname(__file__), "export_test.html")
+        if not os.path.exists(template_path):
+            # Use a basic template if file doesn't exist
+            html_template = '''<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1" name="viewport">
+<title>Exported Notes</title>
+<style>
+    body { font-family: monospace; background: #000; color: #fff; margin: 20px; }
+    .node { margin-left: 20px; margin-top: 5px; }
+    .folder { font-weight: bold; }
+    .note { color: #ccc; }
+</style>
+</head>
+<body>
+<h1>Exported Notes</h1>
+<script>
+    const treeData = ''' + json.dumps(tree_data, indent=2) + ''';
+    console.log('Tree data loaded:', treeData);
+</script>
+</body>
+</html>'''
+        else:
+            with open(template_path, 'r', encoding='utf-8') as f:
+                html_template = f.read()
+            
+            # Replace treeData in template
+            tree_data_json = json.dumps(tree_data, indent=2)
+            html_template = html_template.replace(
+                'let treeData = [', 
+                f'let treeData = {tree_data_json}'
+            )
+            # Remove empty array closing bracket if it exists
+            html_template = html_template.replace('];', '')
+        
+        # Write HTML file
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(html_template)
+        
+        # Update last directory
+        last_directory = os.path.dirname(filepath)
+        save_config()
+        
+        show_msg(f"Exported to {os.path.basename(filepath)}")
+        
+    except Exception as e:
+        show_msg(f"Error exporting HTML: {e}")
+
 def main():
     global tree, editor, mode_label, msg_label, window, quitting
 
@@ -1998,9 +2178,7 @@ def main():
     if current_file and os.path.exists(current_file):
         silent_load_file(current_file)
     
-    # Tree column width is now controlled by tree.column() only
-    
-    window.after(100, select_tree)
+# Tree column width is now controlled by tree.column() only
 
     window.mainloop()
 
