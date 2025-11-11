@@ -1218,10 +1218,10 @@ def open_help_dialog():
 
     tk.Label(container, text="Key Bindings:", bg="black", fg="white", anchor="w").pack(anchor="w", padx=2, pady=(2, 0))
 
-    search_var = tk.StringVar()
+    help_search_var = tk.StringVar()
     entry = tk.Entry(
         container,
-        textvariable=search_var,
+        textvariable=help_search_var,
         bg="black",
         fg="white",
         insertbackground="white",
@@ -1248,10 +1248,9 @@ def open_help_dialog():
         font=("Courier", 10)
     )
     listbox.pack(fill="both", expand=True, padx=2, pady=(0, 2))
-    listbox.focus_set()
 
     def update_help_results(*args):
-        query = search_var.get().strip()
+        query = help_search_var.get().strip()
         listbox.delete(0, tk.END)
 
         key_only = False
@@ -1274,27 +1273,17 @@ def open_help_dialog():
             if match:
                 filtered_entries.append(h)
         
-        # Header row
-        header = f"{'KEY':<12} {'MODE':<8} DESCRIPTION"
-        listbox.insert(tk.END, header)
-        
         # Items
         for h in filtered_entries:
             entry = f"{h['key']:<12} {h['mode']:<8} {h['description']}"
             listbox.insert(tk.END, entry)
         
-        # Highlight header row
-        listbox.itemconfig(0, {'fg': 'cyan'})
-        
-        # Initial selection (first actual entry, skipping header)
-        if listbox.size() > 1:
-            listbox.select_set(1)
-            listbox.activate(1)
-            listbox.see(1)
+        # Initial selection
+        if listbox.size() > 0:
+            listbox.select_set(0)
+            listbox.activate(0)
+            listbox.see(0)
 
-    # Bindings
-    search_var.trace_add("write", update_help_results)
-    
     def close_help_dialog(event=None):
         global help_popup
         if help_popup:
@@ -1303,17 +1292,14 @@ def open_help_dialog():
         window.focus_force()
         select_tree()
     
-    # Initial population
-    update_help_results()
-    
     def move_selection(offset):
         cur = listbox.curselection()
         if not cur:
-            idx = 1
+            idx = 0
         else:
             idx = cur[0] + offset
-        if idx < 1:
-            idx = 1
+        if idx < 0:
+            idx = 0
         elif idx >= listbox.size():
             idx = listbox.size() - 1
         listbox.select_clear(0, tk.END)
@@ -1322,14 +1308,14 @@ def open_help_dialog():
         listbox.see(idx)
         return "break"
     
-    # Navigation keys
-    help_popup.bind("j", lambda e: move_selection(1))
-    help_popup.bind("k", lambda e: move_selection(-1))
+    # Bindings
+    help_search_var.trace_add("write", update_help_results)
+    help_popup.bind("<Escape>", close_help_dialog)
     help_popup.bind("<Down>", lambda e: move_selection(1))
     help_popup.bind("<Up>", lambda e: move_selection(-1))
     
-    # Close on Escape
-    help_popup.bind("<Escape>", close_help_dialog)
+    # Initial population
+    update_help_results()
 
 
 
