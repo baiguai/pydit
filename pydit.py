@@ -177,13 +177,104 @@ def open_links_dialog():
     global links_popup
 
     content = editor.get("1.0", "end-1c")
+    lines = content.split('\n')
 
-    # Detect URLs and _note_ patterns
-    url_pattern = r'(https?://[^\s]+|www\.[^\s]+)'
-    urls = re.findall(url_pattern, content)
-
+    # Detect links with labels and URLs/notes
+    all_detected_links = []
+    
+    # Pattern for [label](url) markdown-style links
+    markdown_link_pattern = r'\[([^\]]+)\]\(([^)]+)\)'
+    
+    # Pattern for URLs and _note_ patterns (for fallback)
+    url_pattern = r'(https?://[^\s\)]+|www\.[^\s\)]+)'
     note_pattern = r'(?<!\w)_(.+?)_(?!\w)'
-    notes = re.findall(note_pattern, content)
+    
+    # Track found URLs and notes to avoid duplicates
+    found_urls = set()
+    found_notes = set()
+    
+    # Find markdown-style links first
+    for match in re.finditer(markdown_link_pattern, content):
+        label = match.group(1)
+        url = match.group(2)
+        if url.startswith('http') or url.startswith('www.'):
+            all_detected_links.append(("url", url, label))
+            found_urls.add(url)
+        else:
+            all_detected_links.append(("note", url, label))
+            found_notes.add(url)
+    
+    # Find labels on line before URL/note
+    for i, line in enumerate(lines):
+        # Check next line for URL or note
+        if i + 1 < len(lines):
+            next_line = lines[i + 1].strip()
+            current_line = line.strip()
+            
+            # Look for [label] pattern on current line (only if it's whole line)
+            label_match = re.fullmatch(r'\[([^\]]+)\]', current_line)
+            if label_match:
+                label = label_match.group(1)
+                
+                # Check if next line has URL
+                url_match = re.search(url_pattern, next_line)
+                if url_match:
+                    url = url_match.group(1)
+                    if url not in found_urls:
+                        all_detected_links.append(("url", url, label))
+                        found_urls.add(url)
+                    continue
+                
+                # Check if next line has note
+                note_match = re.search(note_pattern, next_line)
+                if note_match:
+                    note = note_match.group(1)
+                    if note not in found_notes:
+                        all_detected_links.append(("note", note, label))
+                        found_notes.add(note)
+                    continue
+        
+        # Also check for inline [label] url pattern on same line (optional space)
+        label_match = re.search(r'\[([^\]]+)\]\s*(https?://[^\s\)]+|www\.[^\s\)]+)', line)
+        if label_match:
+            label = label_match.group(1)
+            url = label_match.group(2)
+            if url not in found_urls:
+                all_detected_links.append(("url", url, label))
+                found_urls.add(url)
+            continue
+            
+        # Check for inline [label] _note_ pattern on same line (optional space)
+        label_match = re.search(r'\[([^\]]+)\]\s*_(.+?)_(?!\w)', line)
+        if label_match:
+            label = label_match.group(1)
+            note = label_match.group(2)
+            if note not in found_notes:
+                all_detected_links.append(("note", note, label))
+                found_notes.add(note)
+    
+    # Find standalone URLs and notes (without labels) as fallback
+    # First, find all URLs and notes in the content
+    all_urls = []
+    all_notes = []
+    
+    for match in re.finditer(url_pattern, content):
+        all_urls.append(match.group(1))
+    
+    for match in re.finditer(note_pattern, content):
+        all_notes.append(match.group(1))
+    
+    # Add URLs that weren't found with labels
+    for url in all_urls:
+        if url not in found_urls:
+            all_detected_links.append(("url", url, None))
+            found_urls.add(url)
+    
+    # Add notes that weren't found with labels
+    for note in all_notes:
+        if note not in found_notes:
+            all_detected_links.append(("note", note, None))
+            found_notes.add(note)
 
     # --- Popup setup ---
     links_popup = tk.Toplevel(window)
@@ -218,12 +309,12 @@ def open_links_dialog():
     listbox.pack(fill="both", expand=True)
 
     all_links = []
-    for url in urls:
-        all_links.append(("url", url))
-        listbox.insert(tk.END, f"[URL]  {url}")
-    for note in notes:
-        all_links.append(("note", note))
-        listbox.insert(tk.END, f"[NOTE] {note}")
+    for link_type, value, label in all_detected_links:
+        all_links.append((link_type, value))
+        if label:
+            listbox.insert(tk.END, f"[{link_type.upper()}]  {label} -> {value}")
+        else:
+            listbox.insert(tk.END, f"[{link_type.upper()}]  {value}")
 
     if not all_links:
         listbox.insert(tk.END, "No links found in this note.")
