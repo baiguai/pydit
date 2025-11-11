@@ -1192,7 +1192,7 @@ def open_help_dialog():
         return
 
     help_popup = tk.Toplevel(window)
-    help_popup.configure(bg="black", bd=1, highlightthickness=1, highlightbackground="gray")
+    help_popup.configure(bg="gray", bd=1, highlightthickness=1, highlightbackground="gray")
     help_popup.overrideredirect(True)
     help_popup.transient(window)
     help_popup.grab_set()
@@ -1214,68 +1214,113 @@ def open_help_dialog():
     help_popup.geometry(f"{width}x{height}+{x}+{y}")
 
     container = tk.Frame(help_popup, bg="black")
-    container.pack(fill="both", expand=True, padx=6, pady=6)
+    container.pack(fill="both", expand=True, padx=2, pady=2)
 
-    tk.Label(container, text="Key Bindings", fg="white", bg="black",
-             font=("Courier", 12, "bold"), anchor="w").pack(anchor="w", pady=(0, 5))
+    tk.Label(container, text="Key Bindings:", bg="black", fg="white", anchor="w").pack(anchor="w", padx=2, pady=(2, 0))
 
-    # Frame to hold listbox + scrollbar
-    scroll_frame = tk.Frame(container, bg="black")
-    scroll_frame.pack(fill="both", expand=True)
-    
-    scrollbar = tk.Scrollbar(scroll_frame, orient="vertical")
-    scrollbar.pack(side="right", fill="y")
-    
-    listbox = tk.Listbox(
-        scroll_frame,
+    search_var = tk.StringVar()
+    entry = tk.Entry(
+        container,
+        textvariable=search_var,
         bg="black",
         fg="white",
+        insertbackground="white",
         relief="flat",
+        highlightthickness=1,
+        highlightbackground="gray",
+        highlightcolor="white",
+        borderwidth=1,
+        font=("Courier", 10)
+    )
+    entry.pack(fill="x", padx=2, pady=(0, 2))
+    entry.focus_set()
+    
+    listbox = tk.Listbox(
+        container,
+        bg="black",
+        fg="white",
         selectbackground="#333",
-        font=("Courier", 10),
+        selectforeground="white",
+        relief="flat",
         highlightthickness=1,
         highlightbackground="gray",
         activestyle="none",
-        yscrollcommand=scrollbar.set
+        font=("Courier", 10)
     )
-    listbox.pack(fill="both", expand=True)
-    scrollbar.config(command=listbox.yview)
+    listbox.pack(fill="both", expand=True, padx=2, pady=(0, 2))
     listbox.focus_set()
 
-    # Header row
-    header = f"{'KEY':<12} {'MODE':<8} DESCRIPTION"
-    listbox.insert(tk.END, header)
-    listbox.insert(tk.END, "-" * 60)
+    def update_help_results(*args):
+        query = search_var.get().strip()
+        listbox.delete(0, tk.END)
+
+        key_only = False
+        if query.startswith(":"):
+            key_only = True
+            query = query[1:].strip().lower()
+        else:
+            query = query.lower()
+
+        # Filter help entries
+        filtered_entries = []
+        for h in help_entries:
+            if key_only:
+                match = query in h['key'].lower()
+            else:
+                match = (query in h['key'].lower() or 
+                        query in h['description'].lower() or
+                        query in h['mode'].lower())
+            
+            if match:
+                filtered_entries.append(h)
+        
+        # Header row
+        header = f"{'KEY':<12} {'MODE':<8} DESCRIPTION"
+        listbox.insert(tk.END, header)
+        
+        # Items
+        for h in filtered_entries:
+            entry = f"{h['key']:<12} {h['mode']:<8} {h['description']}"
+            listbox.insert(tk.END, entry)
+        
+        # Highlight header row
+        listbox.itemconfig(0, {'fg': 'cyan'})
+        
+        # Initial selection (first actual entry, skipping header)
+        if listbox.size() > 1:
+            listbox.select_set(1)
+            listbox.activate(1)
+            listbox.see(1)
+
+    # Bindings
+    search_var.trace_add("write", update_help_results)
     
-    # Items
-    for h in help_entries:
-        entry = f"{h['key']:<12} {h['mode']:<8} {h['description']}"
-        listbox.insert(tk.END, entry)
+    def close_help_dialog(event=None):
+        global help_popup
+        if help_popup:
+            help_popup.destroy()
+        help_popup = None
+        window.focus_force()
+        select_tree()
     
-    # Highlight header rows
-    listbox.itemconfig(0, {'fg': 'cyan'})
-    listbox.itemconfig(1, {'fg': 'gray'})
-    
-    # Initial selection (first actual entry, skipping header)
-    if listbox.size() > 2:
-        listbox.select_set(2)
-        listbox.activate(2)
-        listbox.see(2)
+    # Initial population
+    update_help_results()
     
     def move_selection(offset):
         cur = listbox.curselection()
         if not cur:
-            idx = 2
+            idx = 1
         else:
             idx = cur[0] + offset
-        if idx < 2:
-            idx = 2
+        if idx < 1:
+            idx = 1
         elif idx >= listbox.size():
             idx = listbox.size() - 1
         listbox.select_clear(0, tk.END)
         listbox.select_set(idx)
         listbox.activate(idx)
         listbox.see(idx)
+        return "break"
     
     # Navigation keys
     help_popup.bind("j", lambda e: move_selection(1))
@@ -1283,22 +1328,8 @@ def open_help_dialog():
     help_popup.bind("<Down>", lambda e: move_selection(1))
     help_popup.bind("<Up>", lambda e: move_selection(-1))
     
-    # Close on Escape (from anywhere)
-    help_popup.bind("<Escape>", lambda e: close_help_dialog())
-    window.bind("<Escape>", lambda e: close_help_dialog())
-    
-    def close_help_dialog():
-        global help_popup
-        try:
-            if help_popup and help_popup.winfo_exists():
-                help_popup.destroy()
-        except Exception:
-            pass
-        help_popup = None
-        # Unbind the Escape key used to close help
-        window.unbind("<Escape>")
-        window.focus_force()
-        select_tree()
+    # Close on Escape
+    help_popup.bind("<Escape>", close_help_dialog)
 
 
 
