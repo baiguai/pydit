@@ -3,6 +3,8 @@ from tkinter import ttk
 from tkinter.filedialog import askopenfilename, asksaveasfilename
 import csv
 import re, os, webbrowser
+import json
+import json
 
 current_file = None
 last_key = ""
@@ -20,6 +22,34 @@ pending_command = ""
 yank_buffer = ""
 visual_start = None
 visual_mode = None  # "char" or "line"
+
+tree_panel_width = 400
+last_directory = os.path.expanduser("~")  # Start with home directory
+config_file = os.path.join(os.path.expanduser("~"), ".pydit_config.json")
+
+
+# Directory persistence functions
+def load_config():
+    """Load configuration including last used directory."""
+    global last_directory
+    try:
+        if os.path.exists(config_file):
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+                last_directory = config.get('last_directory', os.path.expanduser("~"))
+    except Exception:
+        last_directory = os.path.expanduser("~")
+
+def save_config():
+    """Save configuration including last used directory."""
+    try:
+        config = {'last_directory': last_directory}
+        with open(config_file, 'w') as f:
+            json.dump(config, f)
+    except Exception:
+        pass
+last_directory = os.path.expanduser("~")  # Start with home directory
+config_file = os.path.join(os.path.expanduser("~"), ".pydit_config.json")
 
 
 
@@ -107,14 +137,20 @@ def savefile():
     show_msg(f"Saved to {current_file}")
 
 def savefile_as():
-    global current_file
+    global current_file, last_directory
     filepath = asksaveasfilename(defaultextension=".pyd",
+                                 initialdir=last_directory,
                                  filetypes=[("Pydit Files", "*.pyd"), ("CSV Files", "*.csv")])
     if not filepath:
         return
 
     _write_to_csv(filepath)
     current_file = filepath
+    
+    # Update and save last directory
+    last_directory = os.path.dirname(filepath)
+    save_config()
+    
     show_msg(f"Saved As {filepath}")
 
 def quit_app():
@@ -521,10 +557,11 @@ def open_bookmarks_dialog():
             listbox.see(idx)
 
     def go_to_selected(event=None):
+        sel = listbox.curselection()
         if not sel:
             return
-        his = history[sel[0]]
-        item = his["id"]
+        bm = bookmarks[sel[0]]
+        item = bm["id"]
         if tree.exists(item):
             tree.selection_set(item)
             tree.focus(item)
@@ -669,7 +706,33 @@ def show_msg(msg_text):
     msg_label.after(2000, clear_msg)
 
 def resize_tree(amount):
-    tree.column("#0", width=(tree.column("#0")['width'])+amount)
+    """Resize the tree panel and store the width in the current session."""
+    global tree_panel_width
+    
+    # Get current width from the tree column
+    try:
+        current_width = int(tree.column("#0", option="width"))
+    except Exception:
+        current_width = 300  # default fallback
+
+    # Calculate new width with bounds
+    new_width = max(100, min(800, current_width + amount))
+    
+    # Update the tree column width
+    tree.column("#0", width=new_width)
+    
+    # Force the grid cell to match the new width
+    # Use minsize to set minimum size, and remove weight so it doesn't expand
+    window.grid_columnconfigure(0, minsize=new_width, weight=0)
+    
+    # Make sure column 1 (editor) still expands to fill remaining space
+    window.grid_columnconfigure(1, weight=1)
+    
+    # Force geometry update
+    window.update_idletasks()
+    
+    # Store for saving
+    tree_panel_width = new_width
 
 
 
@@ -765,8 +828,9 @@ def select_tree():
         window.after(10, lambda: (tree.focus(item), tree.focus_set()))
 
 def openfile(window):
-    global current_file
-    filepath = askopenfilename(filetypes=[("Pydit Files", "*.pyd"), ("CSV Files", "*.csv")])
+    global current_file, last_directory
+    filepath = askopenfilename(initialdir=last_directory,
+                              filetypes=[("Pydit Files", "*.pyd"), ("CSV Files", "*.csv")])
     if not filepath:
         return
 
@@ -779,6 +843,10 @@ def openfile(window):
 
     current_file = filepath
     window.title(f"Pydit - {filepath}")
+    
+    # Update and save last directory
+    last_directory = os.path.dirname(filepath)
+    save_config()
 
     selected_path_to_find = ""
     node_path_map = {}
@@ -1209,10 +1277,17 @@ def move_to_line_start():
     editor.mark_set("insert", "insert linestart")
 
 def move_to_line_end(count=1):
-    move_cursor_down(count - 1)
-    line_index = editor.index("insert").split(".")[0]
-    editor.mark_set("insert", f"{line_index}.end")
+    if count > 1:
+        move_cursor_down(count - 1)
+    
+    # Get current line and move to end
+    current_index = editor.index("insert")
+    line_num = current_index.split(".")[0]
+    end_position = f"{line_num}.end"
+    
+    editor.mark_set("insert", end_position)
     editor.see("insert")
+    
     if mode == "VISUAL":
         update_visual_selection()
 
@@ -1567,7 +1642,14 @@ def on_editor_key(event):
             move_to_word_end(count)
         elif key == "0":
             move_to_line_start()
+        elif key == "<Shift-4>":
+            print(f"DEBUG: Shift-4 key detected, calling move_to_line_end()")
+            move_to_line_end()
+        elif key == "dollar":
+            move_to_line_end()
         elif key == "$":
+            move_to_line_end()
+        elif key == "<Shift-4>":
             move_to_line_end()
         elif key == "G":
             move_to_end_of_file()
@@ -1680,9 +1762,13 @@ def apply_dark_theme(tree):
 def main():
     global tree, editor, mode_label, msg_label, window, quitting
 
+    # Load configuration including last directory
+    load_config()
+
     window = tk.Tk()
+    window.attributes('-zoomed', True)
     window.title("Pydit")
-    window.geometry("800x500")
+    # window.geometry("800x500")
     window.configure(bg="black")
 
     window.columnconfigure(1, weight=1)
@@ -1707,6 +1793,7 @@ def main():
     # Message label
     msg_label = tk.Label(window, text=f"", fg="white", bg="black")
     msg_label.grid(row=1, column=1, columnspan=2, sticky="w")
+
 
     # Global key handling
     window.bind("<Key>", on_window_key)
