@@ -2104,26 +2104,41 @@ def export_to_html():
             
             # Replace treeData in template using position-based replacement for more reliability
             # Format JSON with line breaks for readability
-            def format_json_with_breaks(obj, max_chars_per_line=500):
-                """Format JSON with line breaks to keep lines manageable."""
+            # Configurable: change this value to adjust elements per row
+            elements_per_row = 50  # <-- CONFIGURE THIS VALUE
+            
+            def format_json_with_rows(obj, elements_per_row=elements_per_row):
+                """Format JSON with specified number of elements per row."""
                 raw = json.dumps(obj, separators=(',', ':'))
                 
-                # If content is short, return as-is
-                if len(raw) <= max_chars_per_line:
+                # Parse the JSON to count elements
+                try:
+                    parsed = json.loads(raw)
+                    if not isinstance(parsed, list):
+                        return raw
+                    
+                    # Build formatted JSON with elements per row
+                    result_parts = ['[']
+                    for i, element in enumerate(parsed):
+                        # Add element
+                        element_str = json.dumps(element, separators=(',', ':'))
+                        result_parts.append(element_str)
+                        
+                        # Add comma and newline if not last element, and if we've reached elements_per_row
+                        if i < len(parsed) - 1 and (i + 1) % elements_per_row == 0:
+                            result_parts.append(',\n')
+                        elif i < len(parsed) - 1:
+                            result_parts.append(',')
+                    
+                    # Close the array
+                    result_parts.append(']')
+                    return ''.join(result_parts)
+                    
+                except json.JSONDecodeError:
+                    # Fallback to simple formatting if parsing fails
                     return raw
-                
-                # For longer content, add line breaks after each object in array
-                formatted = raw.replace('},{', '},\n{')
-                
-                # Add line breaks after opening bracket and before closing bracket
-                if formatted.startswith('[{'):
-                    formatted = '[\n{' + formatted[2:]
-                if formatted.endswith('}]'):
-                    formatted = formatted[:-2] + '\n}]'
-                
-                return formatted
             
-            tree_data_json = format_json_with_breaks(tree_data)
+            tree_data_json = format_json_with_rows(tree_data)
             import re
             # Find the treeData array boundaries (non-greedy to stop at first closing bracket)
             match = re.search(r'let treeData = (\[.*?\]);', html_template, re.DOTALL)
