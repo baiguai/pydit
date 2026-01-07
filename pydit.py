@@ -19,7 +19,6 @@ history = []
 
 command_count = ""
 pending_command = ""
-yank_buffer = ""
 visual_start = None
 visual_mode = None  # "char" or "line"
 
@@ -1644,61 +1643,60 @@ def cancel_visual_mode():
     set_mode("NORMAL")
 
 def yank_selection():
-    global yank_buffer
     try:
-        yank_buffer = editor.get("sel.first", "sel.last")
+        text = editor.get("sel.first", "sel.last")
         window.clipboard_clear()
-        window.clipboard_append(yank_buffer)
+        window.clipboard_append(text)
     except Exception:
         pass  # nothing selected
 
 def delete_selection():
-    global yank_buffer
     try:
-        yank_buffer = editor.get("sel.first", "sel.last")
+        text = editor.get("sel.first", "sel.last")
         window.clipboard_clear()
-        window.clipboard_append(yank_buffer)
+        window.clipboard_append(text)
         editor.delete("sel.first", "sel.last")
     except Exception:
         pass
 
 def cut_selection():
-    global yank_buffer
     try:
-        yank_buffer = editor.get("sel.first", "sel.last")
+        text = editor.get("sel.first", "sel.last")
         window.clipboard_clear()
-        window.clipboard_append(yank_buffer)
+        window.clipboard_append(text)
         editor.delete("sel.first", "sel.last")
     except Exception:
         pass
 
 def yank_current_line(n=1):
-    global yank_buffer
-    start = editor.index("insert linestart")
-    end = editor.index(f"{start} +{n}lines")
-    yank_buffer = editor.get(start, end)
-    window.clipboard_clear()
-    window.clipboard_append(yank_buffer)
+    try:
+        start = editor.index("insert linestart")
+        end = editor.index(f"{start} +{n}lines")
+        text = editor.get(start, end)
+        window.clipboard_clear()
+        window.clipboard_append(text)
+    except tk.TclError:
+        pass # Safeguard
 
 def delete_line(n=1):
-    global yank_buffer
-    start = editor.index("insert linestart")
-    end = editor.index(f"{start} +{n}lines")
-    yank_buffer = editor.get(start, end)
-    window.clipboard_clear()
-    window.clipboard_append(yank_buffer)
-    editor.delete(start, end)
+    try:
+        start = editor.index("insert linestart")
+        end = editor.index(f"{start} +{n}lines")
+        text = editor.get(start, end)
+        window.clipboard_clear()
+        window.clipboard_append(text)
+        editor.delete(start, end)
+    except tk.TclError:
+        pass # Safeguard
 
 def paste_text():
-    global yank_buffer
     try:
         clipboard_content = window.clipboard_get()
         if clipboard_content:
             editor.insert("insert", clipboard_content)
     except tk.TclError:
-        # Fallback to internal buffer if clipboard is empty or has non-text data
-        if yank_buffer:
-            editor.insert("insert", yank_buffer)
+        # Clipboard is empty or doesn't contain text
+        pass
 
 def undo(event=None):
     try:
@@ -1885,6 +1883,12 @@ def on_editor_key(event):
     # ---------------------------------------
     elif mode in ("NORMAL", "VISUAL"):
 
+        # Handle digits for command counts in both modes
+        if key.isdigit():
+            if not (key == "0" and command_count == ""):
+                command_count += key
+                return "break"
+
         # VISUAL-only shortcuts (y/d/p)
         if mode == "VISUAL":
             if key == "Escape":
@@ -1918,11 +1922,6 @@ def on_editor_key(event):
                 update_node()
                 select_tree()
                 return "break"
-
-            if key.isdigit():
-                if not (key == "0" and command_count == ""):
-                    command_count += key
-                    return "break"
 
             if key == "i":
                 set_mode("INSERT")
