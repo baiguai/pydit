@@ -117,6 +117,7 @@ help_entries = [
     {"key": "u", "mode": "NORMAL", "description": "Undo last change"},
     {"key": "Ctrl-r", "mode": "NORMAL", "description": "Redo last change"},
     {"key": "~", "mode": "NORMAL", "description": "Toggle case of character"},
+    {"key": "D", "mode": "NORMAL", "description": "Delete to end of line"},
 
     # --- VISUAL MODE ---
     {"key": "y", "mode": "VISUAL", "description": "Yank (copy) selected text"},
@@ -1689,6 +1690,23 @@ def delete_line(n=1):
     except tk.TclError:
         pass # Safeguard
 
+def delete_to_line_end():
+    try:
+        start_index = editor.index("insert")
+        end_index = editor.index("insert lineend")
+        
+        # Get the text to be deleted
+        text_to_delete = editor.get(start_index, end_index)
+        
+        # Copy to system clipboard
+        window.clipboard_clear()
+        window.clipboard_append(text_to_delete)
+        
+        # Delete from editor
+        editor.delete(start_index, end_index)
+    except tk.TclError:
+        pass # Safeguard
+
 def paste_text():
     try:
         clipboard_content = window.clipboard_get()
@@ -1963,6 +1981,9 @@ def on_editor_key(event):
                 return "break"
             elif key == "asciitilde":
                 toggle_case()
+                return "break"
+            elif key == "D":
+                delete_to_line_end()
                 return "break"
 
         # Handle multi-key combos
