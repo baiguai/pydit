@@ -2442,7 +2442,6 @@ def main():
     window.bind("<Shift-slash>", lambda e: open_help_dialog())  # fallback for Shift+/ systems
     tree.bind("<Key>", on_tree_key)
     editor.bind("<Key>", on_editor_key)
-    editor.bind("<Control-r>", redo)
 
     editor.bind("<Button-1>", on_editor_click)
     tree.bind("<Button-1>", on_tree_click)
