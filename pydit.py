@@ -1635,6 +1635,8 @@ def yank_selection():
     global yank_buffer
     try:
         yank_buffer = editor.get("sel.first", "sel.last")
+        window.clipboard_clear()
+        window.clipboard_append(yank_buffer)
     except Exception:
         pass  # nothing selected
 
@@ -1642,6 +1644,8 @@ def delete_selection():
     global yank_buffer
     try:
         yank_buffer = editor.get("sel.first", "sel.last")
+        window.clipboard_clear()
+        window.clipboard_append(yank_buffer)
         editor.delete("sel.first", "sel.last")
     except Exception:
         pass
@@ -1650,6 +1654,8 @@ def cut_selection():
     global yank_buffer
     try:
         yank_buffer = editor.get("sel.first", "sel.last")
+        window.clipboard_clear()
+        window.clipboard_append(yank_buffer)
         editor.delete("sel.first", "sel.last")
     except Exception:
         pass
@@ -1659,18 +1665,28 @@ def yank_current_line(n=1):
     start = editor.index("insert linestart")
     end = editor.index(f"{start} +{n}lines")
     yank_buffer = editor.get(start, end)
+    window.clipboard_clear()
+    window.clipboard_append(yank_buffer)
 
 def delete_line(n=1):
     global yank_buffer
     start = editor.index("insert linestart")
     end = editor.index(f"{start} +{n}lines")
     yank_buffer = editor.get(start, end)
+    window.clipboard_clear()
+    window.clipboard_append(yank_buffer)
     editor.delete(start, end)
 
 def paste_text():
     global yank_buffer
-    if yank_buffer:
-        editor.insert("insert", yank_buffer)
+    try:
+        clipboard_content = window.clipboard_get()
+        if clipboard_content:
+            editor.insert("insert", clipboard_content)
+    except tk.TclError:
+        # Fallback to internal buffer if clipboard is empty or has non-text data
+        if yank_buffer:
+            editor.insert("insert", yank_buffer)
 
 
 
@@ -1857,6 +1873,9 @@ def on_editor_key(event):
                 return "break"
             elif key == "V":
                 start_visual_mode("line")
+                return "break"
+            elif key == "s":
+                savefile()
                 return "break"
 
         # Handle multi-key combos
