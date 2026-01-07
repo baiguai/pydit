@@ -1,12 +1,11 @@
-Folder,Note,Content
-Work,Meeting Notes,"Discuss Q4 goals and budgets with the team.
-hmmmm"
-Work,Ideas,Consider moving to a four-day work week.
-Personal,Shopping List,Milk\nEggs\nBread\nCoffee.
-Personal,Books to Read,The Hobbit\nDune\n1984\nThe Name of the Wind.
-Personal,Thoughts,Time spent learning is never wasted.
-Personal,Todo,Finish project report and submit by Friday.
-Projects,Text Editor,Start Pydit project. Add treeview and editor split view.
-Projects,Website,Update portfolio with new Python apps.
-Random,Quotes,Simplicity is the ultimate sophistication.
-Random,Code Snippet,print('Hello
+Path,Type,Content,Expanded,Selected,Bookmarked,TreeWidth
+__tree_width__,config,580,,,,
+aaaaaa,folder,,0,False,0
+bbbbbb,folder,,1,False,0
+bbbbbb/cccccc,folder,,1,False,0
+bbbbbb/cccccc/dddddd,folder,,1,False,0
+bbbbbb/cccccc/dddddd/xxxxxx,note,"xxxxxx
+
+xxxx x xxxxxx xxx xx xxxxxxx x x xxxxxx x",0,True,0
+bbbbbb/lkjkljjklljkj,folder,,1,False,0
+bbbbbb/lkjkljjklljkj/eeeee,folder,,0,False,0
