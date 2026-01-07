@@ -91,6 +91,9 @@ help_entries = [
     {"key": "X", "mode": "TREE", "description": "Import from HTML file"},
     {"key": "x", "mode": "TREE", "description": "Export to HTML file"},
 
+    {"key": "[", "mode": "TREE", "description": "Reduce tree panel size"},
+    {"key": "]", "mode": "TREE", "description": "Increase tree panel size"},
+
 
     # --- NORMAL MODE ---
     {"key": "i", "mode": "NORMAL", "description": "Enter INSERT mode"},
