@@ -144,6 +144,7 @@ def newfile():
     for item in tree.get_children():
         tree.delete(item)
     editor.delete(1.0, tk.END)
+    editor.edit_reset()
 
     current_file = ""
 
@@ -2136,6 +2137,8 @@ def on_tree_select(event):
     if parent and tree.item(item, "values"):
         content = tree.item(item, "values")[0]
         editor.insert(tk.END, content)
+    
+    editor.edit_reset()
 
 def apply_dark_theme(tree):
     style = ttk.Style()
