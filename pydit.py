@@ -19,7 +19,6 @@ history = []
 
 command_count = ""
 pending_command = ""
-yank_buffer = ""
 visual_start = None
 visual_mode = None  # "char" or "line"
 
@@ -92,6 +91,9 @@ help_entries = [
     {"key": "X", "mode": "TREE", "description": "Import from HTML file"},
     {"key": "x", "mode": "TREE", "description": "Export to HTML file"},
 
+    {"key": "[", "mode": "TREE", "description": "Reduce tree panel size"},
+    {"key": "]", "mode": "TREE", "description": "Increase tree panel size"},
+
 
     # --- NORMAL MODE ---
     {"key": "i", "mode": "NORMAL", "description": "Enter INSERT mode"},
@@ -108,6 +110,17 @@ help_entries = [
     {"key": "w / b / e", "mode": "NORMAL", "description": "Move forward / back / end of word"},
     {"key": "h / j / k / l", "mode": "NORMAL", "description": "Move left / down / up / right"},
     {"key": "Esc", "mode": "NORMAL", "description": "Return to TREE mode"},
+    {"key": "a", "mode": "NORMAL", "description": "Append text after cursor"},
+    {"key": "A", "mode": "NORMAL", "description": "Append text at end of line"},
+    {"key": "o", "mode": "NORMAL", "description": "Open line below"},
+    {"key": "O", "mode": "NORMAL", "description": "Open line above"},
+    {"key": "x", "mode": "NORMAL", "description": "Delete character"},
+    {"key": "X", "mode": "NORMAL", "description": "Delete character before cursor"},
+    {"key": "yy", "mode": "NORMAL", "description": "Yank (copy) current line"},
+    {"key": "u", "mode": "NORMAL", "description": "Undo last change"},
+    {"key": "Ctrl-r", "mode": "NORMAL", "description": "Redo last change"},
+    {"key": "~", "mode": "NORMAL", "description": "Toggle case of character"},
+    {"key": "D", "mode": "NORMAL", "description": "Delete to end of line"},
 
     # --- VISUAL MODE ---
     {"key": "y", "mode": "VISUAL", "description": "Yank (copy) selected text"},
@@ -118,6 +131,7 @@ help_entries = [
     {"key": "w / b / e", "mode": "VISUAL", "description": "Expand / contract selection by word"},
     {"key": "0 / $", "mode": "VISUAL", "description": "Select to line start / line end"},
     {"key": "G / gg", "mode": "VISUAL", "description": "Select to end / start of file"},
+    {"key": "~", "mode": "VISUAL", "description": "Toggle case of selection"},
     {"key": "Esc", "mode": "VISUAL", "description": "Cancel visual mode"},
 
     # --- INSERT MODE ---
@@ -133,6 +147,7 @@ def newfile():
     for item in tree.get_children():
         tree.delete(item)
     editor.delete(1.0, tk.END)
+    editor.edit_reset()
 
     current_file = ""
 
@@ -1632,61 +1647,124 @@ def cancel_visual_mode():
     set_mode("NORMAL")
 
 def yank_selection():
-    global yank_buffer
     try:
-        yank_buffer = editor.get("sel.first", "sel.last")
+        text = editor.get("sel.first", "sel.last")
         window.clipboard_clear()
-        window.clipboard_append(yank_buffer)
+        window.clipboard_append(text)
     except Exception:
         pass  # nothing selected
 
 def delete_selection():
-    global yank_buffer
     try:
-        yank_buffer = editor.get("sel.first", "sel.last")
+        text = editor.get("sel.first", "sel.last")
         window.clipboard_clear()
-        window.clipboard_append(yank_buffer)
+        window.clipboard_append(text)
         editor.delete("sel.first", "sel.last")
     except Exception:
         pass
 
 def cut_selection():
-    global yank_buffer
     try:
-        yank_buffer = editor.get("sel.first", "sel.last")
+        text = editor.get("sel.first", "sel.last")
         window.clipboard_clear()
-        window.clipboard_append(yank_buffer)
+        window.clipboard_append(text)
         editor.delete("sel.first", "sel.last")
     except Exception:
         pass
 
 def yank_current_line(n=1):
-    global yank_buffer
-    start = editor.index("insert linestart")
-    end = editor.index(f"{start} +{n}lines")
-    yank_buffer = editor.get(start, end)
-    window.clipboard_clear()
-    window.clipboard_append(yank_buffer)
+    try:
+        start = editor.index("insert linestart")
+        end = editor.index(f"{start} +{n}lines")
+        text = editor.get(start, end)
+        window.clipboard_clear()
+        window.clipboard_append(text)
+    except tk.TclError:
+        pass # Safeguard
 
 def delete_line(n=1):
-    global yank_buffer
-    start = editor.index("insert linestart")
-    end = editor.index(f"{start} +{n}lines")
-    yank_buffer = editor.get(start, end)
-    window.clipboard_clear()
-    window.clipboard_append(yank_buffer)
-    editor.delete(start, end)
+    try:
+        start = editor.index("insert linestart")
+        end = editor.index(f"{start} +{n}lines")
+        text = editor.get(start, end)
+        window.clipboard_clear()
+        window.clipboard_append(text)
+        editor.delete(start, end)
+    except tk.TclError:
+        pass # Safeguard
+
+def delete_to_line_end():
+    try:
+        start_index = editor.index("insert")
+        end_index = editor.index("insert lineend")
+        
+        # Get the text to be deleted
+        text_to_delete = editor.get(start_index, end_index)
+        
+        # Copy to system clipboard
+        window.clipboard_clear()
+        window.clipboard_append(text_to_delete)
+        
+        # Delete from editor
+        editor.delete(start_index, end_index)
+    except tk.TclError:
+        pass # Safeguard
 
 def paste_text():
-    global yank_buffer
     try:
         clipboard_content = window.clipboard_get()
         if clipboard_content:
             editor.insert("insert", clipboard_content)
     except tk.TclError:
-        # Fallback to internal buffer if clipboard is empty or has non-text data
-        if yank_buffer:
-            editor.insert("insert", yank_buffer)
+        # Clipboard is empty or doesn't contain text
+        pass
+
+def undo(event=None):
+    try:
+        editor.edit_undo()
+    except tk.TclError:
+        pass  # Undo stack is empty
+
+def redo(event=None):
+    try:
+        editor.edit_redo()
+    except tk.TclError:
+        pass  # Redo stack is empty
+
+def open_line_below():
+    editor.mark_set("insert", "insert lineend")
+    editor.insert("insert", "\n")
+    set_mode("INSERT")
+
+def open_line_above():
+    editor.insert("insert linestart", "\n")
+    move_cursor_up()
+    set_mode("INSERT")
+
+def toggle_case():
+    if mode == "NORMAL":
+        try:
+            char = editor.get("insert")
+            if char.islower():
+                new_char = char.upper()
+            else:
+                new_char = char.lower()
+            editor.delete("insert")
+            editor.insert("insert", new_char)
+            move_cursor_right() # Move cursor to the next character
+        except tk.TclError:
+            pass # Probably at the end of a line
+    elif mode == "VISUAL":
+        try:
+            start = editor.index("sel.first")
+            end = editor.index("sel.last")
+            selected_text = editor.get(start, end)
+            toggled_text = selected_text.swapcase()
+            editor.delete(start, end)
+            editor.insert(start, toggled_text)
+            cancel_visual_mode()
+        except tk.TclError:
+            pass # No selection
 
 
 
@@ -1826,6 +1904,12 @@ def on_editor_key(event):
     # ---------------------------------------
     elif mode in ("NORMAL", "VISUAL"):
 
+        # Handle digits for command counts in both modes
+        if key.isdigit():
+            if not (key == "0" and command_count == ""):
+                command_count += key
+                return "break"
+
         # VISUAL-only shortcuts (y/d/p)
         if mode == "VISUAL":
             if key == "Escape":
@@ -1847,6 +1931,9 @@ def on_editor_key(event):
                 paste_text()
                 cancel_visual_mode()
                 return "break"
+            elif key == "asciitilde":
+                toggle_case()
+                return "break"
 
 
         # NORMAL-only shortcuts
@@ -1856,11 +1943,6 @@ def on_editor_key(event):
                 update_node()
                 select_tree()
                 return "break"
-
-            if key.isdigit():
-                if not (key == "0" and command_count == ""):
-                    command_count += key
-                    return "break"
 
             if key == "i":
                 set_mode("INSERT")
@@ -1877,6 +1959,35 @@ def on_editor_key(event):
             elif key == "s":
                 savefile()
                 return "break"
+            elif key == "u":
+                undo()
+                return "break"
+            elif key == "o":
+                open_line_below()
+                return "break"
+            elif key == "O":
+                open_line_above()
+                return "break"
+            elif key == "a":
+                move_cursor_right()
+                set_mode("INSERT")
+                return "break"
+            elif key == "A":
+                move_to_line_end()
+                set_mode("INSERT")
+                return "break"
+            elif key == "x":
+                editor.delete("insert")
+                return "break"
+            elif key == "X":
+                editor.delete("insert -1c")
+                return "break"
+            elif key == "asciitilde":
+                toggle_case()
+                return "break"
+            elif key == "D":
+                delete_to_line_end()
+                return "break"
 
         # Handle multi-key combos
         if pending_command:
@@ -1888,6 +1999,10 @@ def on_editor_key(event):
             if combo == "gg":
                 move_to_start_of_file()
                 if mode == "VISUAL": update_visual_selection()
+                return "break"
+
+            elif combo == "yy" and mode == "NORMAL":
+                yank_current_line(count)
                 return "break"
 
             elif combo == "dd" and mode == "NORMAL":
@@ -2045,6 +2160,8 @@ def on_tree_select(event):
     if parent and tree.item(item, "values"):
         content = tree.item(item, "values")[0]
         editor.insert(tk.END, content)
+    
+    editor.edit_reset()
 
 def apply_dark_theme(tree):
     style = ttk.Style()
@@ -2306,7 +2423,7 @@ def main():
     apply_dark_theme(tree)
 
     # Right side: text editor
-    editor = tk.Text(window, fg="white", bg="black", insertbackground="white", wrap="word")
+    editor = tk.Text(window, fg="white", bg="black", insertbackground="white", wrap="word", undo=True)
     editor.grid(row=0, column=1, sticky="nsew")
 
     # Mode label
