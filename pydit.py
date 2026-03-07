@@ -4,7 +4,8 @@ from tkinter.filedialog import askopenfilename, asksaveasfilename
 import csv
 import re, os, webbrowser
 import json
-import json
+import sys
+from table_formatter import format_table
 
 current_file = None
 last_key = ""
@@ -121,6 +122,7 @@ help_entries = [
     {"key": "Ctrl-r", "mode": "NORMAL", "description": "Redo last change"},
     {"key": "~", "mode": "NORMAL", "description": "Toggle case of character"},
     {"key": "D", "mode": "NORMAL", "description": "Delete to end of line"},
+    {"key": "Ctrl+;", "mode": "INSERT/NORMAL", "description": "Converts the selected text to a table"},
 
     # --- VISUAL MODE ---
     {"key": "y", "mode": "VISUAL", "description": "Yank (copy) selected text"},
@@ -1599,6 +1601,23 @@ def delete_prev_word(n=1):
 
 
 
+
+def _get_selected_text_or_current_line():
+    """Gets selected text from the editor, or the current line if nothing is selected."""
+    if editor.tag_ranges("sel"):
+        return editor.get("sel.first", "sel.last")
+    else:
+        # Get current line
+        line_start = editor.index("insert linestart")
+        line_end = editor.index("insert lineend")
+        return editor.get(line_start, line_end)
+
+def _replace_text_in_editor(start_index, end_index, new_text):
+    """Replaces text in the editor from start_index to end_index with new_text."""
+    editor.delete(start_index, end_index)
+    editor.insert(start_index, new_text)
+
+
 # Visual Helpers
 def start_visual_mode(kind="char"):
     global mode, visual_start, visual_mode
@@ -2399,6 +2418,41 @@ def export_to_html():
     except Exception as e:
         show_msg(f"Error exporting HTML: {e}")
 
+
+
+def format_table_command(event=None):
+    """
+    Handles the Ctrl+; keybinding to format selected text or current line as a table.
+    """
+    global editor
+    try:
+        if editor.tag_ranges("sel"):
+            # Get selected text and its start/end indices
+            start_index = editor.index("sel.first")
+            end_index = editor.index("sel.last")
+            selected_text = editor.get(start_index, end_index)
+            formatted_text = format_table(selected_text)
+            _replace_text_in_editor(start_index, end_index, formatted_text)
+        else:
+            # Get current line text and its start/end indices
+            start_index = editor.index("insert linestart")
+            end_index = editor.index("insert lineend")
+            current_line = editor.get(start_index, end_index)
+            # If the current line is just an empty header separator, we should format the whole document
+            if re.match(r'^-+\s*(\|?-+\s*)*\|?$', current_line.strip()):
+                full_text = editor.get("1.0", tk.END)
+                formatted_text = format_table(full_text)
+                editor.delete("1.0", tk.END)
+                editor.insert("1.0", formatted_text)
+            else:
+                formatted_text = format_table(current_line)
+                _replace_text_in_editor(start_index, end_index, formatted_text)
+        show_msg("Table formatted.")
+    except Exception as e:
+        show_msg(f"Error formatting table: {e}")
+        print(f"Error formatting table: {e}")
+
+
 def main():
     global tree, editor, mode_label, msg_label, window, quitting
 
@@ -2445,7 +2499,8 @@ def main():
     window.bind("<Shift-slash>", lambda e: open_help_dialog())  # fallback for Shift+/ systems
     tree.bind("<Key>", on_tree_key)
     editor.bind("<Key>", on_editor_key)
-
+    editor.bind("<Control-semicolon>", format_table_command)
+    
     editor.bind("<Button-1>", on_editor_click)
     tree.bind("<Button-1>", on_tree_click)
 
