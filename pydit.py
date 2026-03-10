@@ -544,9 +544,9 @@ def move_search_selection(offset):
         return
     idx = cur[0] + offset
     if 0 <= idx < search_listbox.size():
-        search_listbox.select_clear(0, tk.END)
-        search_listbox.select_set(idx)
-        search_listbox.see(idx)
+            search_listbox.select_clear(0, tk.END)
+            search_listbox.select_set(idx)
+            search_listbox.see(idx)
 
 def confirm_search_selection(event=None):
     global search_popup
@@ -635,7 +635,8 @@ def open_bookmarks_dialog():
     popup.grab_set()
 
     # Center on window
-    win_x, win_y = window.winfo_rootx(), window.winfo_rooty()
+    win_x = window.winfo_rootx()
+    win_y = window.winfo_rooty()
     win_w, win_h = window.winfo_width(), window.winfo_height()
     width, height = 500, 300
     x, y = win_x + (win_w - width)//2, win_y + (win_h - height)//2
@@ -714,7 +715,6 @@ def open_bookmarks_dialog():
     popup.bind("G", go_last)
 
 
-
 # History Methods
 def open_history_dialog():
     if not history:
@@ -728,7 +728,8 @@ def open_history_dialog():
     popup.grab_set()
 
     # Center on window
-    win_x, win_y = window.winfo_rootx(), window.winfo_rooty()
+    win_x = window.winfo_rootx()
+    win_y = window.winfo_rooty()
     win_w, win_h = window.winfo_width(), window.winfo_height()
     width, height = 500, 300
     x, y = win_x + (win_w - width)//2, win_y + (win_h - height)//2
@@ -966,116 +967,6 @@ def openfile(window):
                               filetypes=[("Pydit Files", "*.pyd"), ("CSV Files", "*.csv")])
     if not filepath:
         return
-
-    apply_dark_theme(tree)
-
-    # Clear everything
-    for item in tree.get_children():
-        tree.delete(item)
-    editor.delete(1.0, tk.END)
-
-    current_file = filepath
-    window.title(f"Pydit - {filepath}")
-    
-    # Update and save last directory
-    last_directory = os.path.dirname(filepath)
-    save_config()
-
-    selected_path_to_find = ""
-    node_path_map = {}
-    global tree_panel_width
-
-    with open(filepath, newline='', encoding='utf-8') as f:
-        reader = csv.DictReader(f)
-        rows = list(reader)
-
-    # Load tree width from first row if available
-    tree_width_loaded = False
-    for row in rows:
-        path = row.get("Path", "").strip()
-        
-        # Check for tree width configuration
-        if path == "__tree_width__" and not tree_width_loaded:
-            width_value = row.get("Content", "200").strip()
-            try:
-                tree_panel_width = int(width_value)
-                tree.column("#0", width=tree_panel_width)
-                # Update grid column minsize to match loaded tree width
-                window.grid_columnconfigure(0, minsize=tree_panel_width, weight=0)
-                tree_width_loaded = True
-            except ValueError:
-                tree_panel_width = 200
-            continue
-            
-        node_type = row.get("Type", "").strip()
-        content = row.get("Content", "")
-        expanded = row.get("Expanded", "").strip().lower() in ("1", "true", "yes")
-        selected = row.get("Selected", "").strip().lower() in ("1", "true", "yes")
-        bookmarked = str(row.get("Bookmarked", "") or "").strip().lower() in ("1", "true", "yes")
-
-        if not path:
-            continue
-
-        parts = path.split("/")
-        name = parts[-1]
-        parent_id = ""
-
-        # Traverse the path to find/create parents
-        for depth, part in enumerate(parts[:-1]):
-            partial_path = "/".join(parts[:depth + 1])
-            if partial_path not in node_path_map:
-                parent_parent = "/".join(parts[:depth]) if depth > 0 else ""
-                parent_node = node_path_map.get(parent_parent, "")
-                node_id = tree.insert(parent_node, tk.END, text=part, open=True)
-                node_path_map[partial_path] = node_id
-
-        # Insert the final node
-        parent_path = "/".join(parts[:-1])
-        parent_id = node_path_map.get(parent_path, "")
-        if node_type == "folder":
-            node_id = tree.insert(parent_id, tk.END, text=name, open=expanded, tags=("folder",))
-        else:  # note
-            node_id = tree.insert(parent_id, tk.END, text=name, values=(content,), tags=("note",))
-        node_path_map[path] = node_id
-
-        if bookmarked:
-            tags = list(tree.item(node_id, "tags"))
-            tags.append("bookmarked")
-            tree.item(node_id, tags=tags)
-
-        if selected:
-            selected_path_to_find = path
-
-    # Restore selection
-    if selected_path_to_find and selected_path_to_find in node_path_map:
-        target_id = node_path_map[selected_path_to_find]
-        tree.selection_set(target_id)
-        tree.focus(target_id)
-        tree.see(target_id)
-        on_tree_select(None)
-
-    refresh_bookmarks_cache()
-
-    set_mode("TREE")
-    select_tree()
-    
-    # Force tree column width to match loaded width (important for proper resizing)
-    tree.column("#0", width=tree_panel_width, minwidth=1)
-    
-    # Try to "unlock" the minimum by temporarily setting to a smaller width
-    tree.column("#0", width=50, minwidth=1)
-    window.update_idletasks()
-    
-    # Then set it back to the loaded width
-    tree.column("#0", width=tree_panel_width, minwidth=1)
-    window.update_idletasks()
-
-def silent_load_file(filepath):
-    """Load a file without showing the open file dialog."""
-    global current_file, last_directory
-
-    if not os.path.exists(filepath):
-        return False
 
     apply_dark_theme(tree)
 
@@ -1599,9 +1490,6 @@ def delete_prev_word(n=1):
     start = editor.index("insert wordstart -{0}word".format(n-1))
     editor.delete(start, "insert")
 
-
-
-
 def _get_selected_text_or_current_line():
     """Gets selected text from the editor, or the current line if nothing is selected."""
     if editor.tag_ranges("sel"):
@@ -1617,6 +1505,76 @@ def _replace_text_in_editor(start_index, end_index, new_text):
     editor.delete(start_index, end_index)
     editor.insert(start_index, new_text)
 
+# Helper functions for table formatting
+def is_formatted_table(text):
+    """
+    Checks if the given text looks like an already formatted ASCII table.
+    Heuristic: presence of top/bottom borders ('+') and content rows ('|').
+    """
+    lines = text.strip().split('\n')
+    if len(lines) < 3: # Needs at least top border, one content row, bottom border
+        return False
+    
+    # Check first line for top border
+    if not (lines[0].startswith('+') and all(c in '+-' for c in lines[0])):
+        return False
+        
+    # Check last line for bottom border
+    if not (lines[-1].startswith('+') and all(c in '+-' for c in lines[-1])):
+        return False
+        
+    # Check for content lines (at least one)
+    has_content = False
+    for line in lines[1:-1]: # Exclude first and last lines
+        if line.strip().startswith('|') and '|' in line:
+            has_content = True
+            break
+            
+    return has_content
+
+def _extract_raw_table_content(formatted_table_text):
+    """
+    Extracts raw pipe-separated content and infers '----' separators from an
+    already formatted ASCII table.
+    """
+    lines = formatted_table_text.strip().split('\n')
+    raw_content_lines = []
+    
+    # Helper to check if a line is a horizontal rule (border or separator)
+    def is_horizontal_rule(line_str):
+        return line_str.startswith('+') and all(c in '+-=' for c in line_str)
+
+    # Process lines
+    for i, line in enumerate(lines):
+        stripped_line = line.strip()
+        if not stripped_line:
+            continue
+
+        if is_horizontal_rule(stripped_line):
+            # If it's an internal horizontal rule (not the absolute first or last),
+            # re-insert a '----' separator.
+            # This logic needs to be careful not to add '----' for the header separator (====)
+            # or for the outermost table borders.
+            # A simple heuristic: if it's a '-' based border and not the very first line,
+            # and the previous raw content wasn't already a '----'.
+            if stripped_line.startswith('+-') and i > 0 and raw_content_lines and raw_content_lines[-1] != '----':
+                raw_content_lines.append("---- ")
+            continue
+        
+        if stripped_line.startswith('|') and stripped_line.endswith('|'):
+            # Extract content from inside the pipes
+            # Split by '|' and strip each cell, then join back with '|'
+            cells = [cell.strip() for cell in stripped_line[1:-1].split('|')]
+            raw_content_lines.append("|".join(cells))
+            
+    # Clean up any potential leading/trailing '----' that might have been
+    # incorrectly inferred from the outermost borders if the heuristics weren't perfect.
+    if raw_content_lines and raw_content_lines[0] == '---- ':
+        raw_content_lines.pop(0)
+    if raw_content_lines and raw_content_lines[-1] == '---- ':
+        raw_content_lines.pop(-1)
+
+    return "\n".join(raw_content_lines)
 
 # Visual Helpers
 def start_visual_mode(kind="char"):
@@ -1907,9 +1865,9 @@ def on_editor_key(event):
 
     key = event.keysym
 
-    # ---------------------------------------
+    # --------------------------------------- 
     # INSERT MODE
-    # ---------------------------------------
+    # --------------------------------------- 
     if mode == "INSERT":
         if key == "Escape":
             set_mode("NORMAL")
@@ -1918,9 +1876,9 @@ def on_editor_key(event):
 
         return
 
-    # ---------------------------------------
+    # --------------------------------------- 
     # NORMAL / VISUAL SHARED LOGIC
-    # ---------------------------------------
+    # --------------------------------------- 
     elif mode in ("NORMAL", "VISUAL"):
 
         # Handle digits for command counts in both modes
@@ -2036,9 +1994,9 @@ def on_editor_key(event):
                 delete_prev_word(count)
                 return "break"
 
-        # ---------------------------------------
+        # --------------------------------------- 
         # Movement (shared)
-        # ---------------------------------------
+        # --------------------------------------- 
         count = int(command_count) if command_count else 1
         command_count = ""
 
@@ -2088,9 +2046,9 @@ def on_editor_key(event):
         if mode != "INSERT":
             return "break"
 
-    # ---------------------------------------
+    # --------------------------------------- 
     # TREE MODE (handled elsewhere)
-    # ---------------------------------------
+    # --------------------------------------- 
     return "break"
 
 def on_window_key(event):
@@ -2162,7 +2120,7 @@ def on_tree_select(event):
 
     entry = {
         "id": item,
-        "name": tree.item(item, "text"),
+        "name": tree.item(item, "text") ,
         "path": get_node_path(item)
     }
 
@@ -2387,7 +2345,7 @@ def export_to_html():
             tree_data_json = format_json_with_rows(tree_data)
             import re
             # Find the treeData array boundaries (non-greedy to stop at first closing bracket)
-            match = re.search(r'let treeData = (\[.*?\]);', html_template, re.DOTALL)
+            match = re.search(r'let treeData = ( Dynamic_JSON_Placeholder );', html_template, re.DOTALL)
             if match:
                 # Replace using string slicing for exact replacement
                 start_pos = match.start(1)  # Start of the array content
@@ -2418,39 +2376,180 @@ def export_to_html():
     except Exception as e:
         show_msg(f"Error exporting HTML: {e}")
 
+def silent_load_file(filepath):
+    """Load a file without showing the open file dialog."""
+    global current_file, last_directory
 
+    if not os.path.exists(filepath):
+        return False
+
+    apply_dark_theme(tree)
+
+    # Clear everything
+    for item in tree.get_children():
+        tree.delete(item)
+    editor.delete(1.0, tk.END)
+
+    current_file = filepath
+    window.title(f"Pydit - {filepath}")
+    
+    # Update and save last directory
+    last_directory = os.path.dirname(filepath)
+    save_config()
+
+    selected_path_to_find = ""
+    node_path_map = {}
+    global tree_panel_width
+
+    with open(filepath, newline='', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+
+    # Load tree width from first row if available
+    tree_width_loaded = False
+    for row in rows:
+        path = row.get("Path", "").strip()
+        
+        # Check for tree width configuration
+        if path == "__tree_width__" and not tree_width_loaded:
+            width_value = row.get("Content", "200").strip()
+            try:
+                tree_panel_width = int(width_value)
+                tree.column("#0", width=tree_panel_width)
+                # Update grid column minsize to match loaded tree width
+                window.grid_columnconfigure(0, minsize=tree_panel_width, weight=0)
+                tree_width_loaded = True
+            except ValueError:
+                tree_panel_width = 200
+            continue
+            
+        node_type = row.get("Type", "").strip()
+        content = row.get("Content", "")
+        expanded = row.get("Expanded", "").strip().lower() in ("1", "true", "yes")
+        selected = row.get("Selected", "").strip().lower() in ("1", "true", "yes")
+        bookmarked = str(row.get("Bookmarked", "") or "").strip().lower() in ("1", "true", "yes")
+
+        if not path:
+            continue
+
+        parts = path.split("/")
+        name = parts[-1]
+        parent_id = ""
+
+        # Traverse the path to find/create parents
+        for depth, part in enumerate(parts[:-1]):
+            partial_path = "/".join(parts[:depth + 1])
+            if partial_path not in node_path_map:
+                parent_parent = "/".join(parts[:depth]) if depth > 0 else ""
+                parent_node = node_path_map.get(parent_parent, "")
+                node_id = tree.insert(parent_node, tk.END, text=part, open=True)
+                node_path_map[partial_path] = node_id
+
+        # Insert the final node
+        parent_path = "/".join(parts[:-1])
+        parent_id = node_path_map.get(parent_path, "")
+        if node_type == "folder":
+            node_id = tree.insert(parent_id, tk.END, text=name, open=expanded, tags=("folder",))
+        else:  # note
+            node_id = tree.insert(parent_id, tk.END, text=name, values=(content,), tags=("note",))
+        node_path_map[path] = node_id
+
+        if bookmarked:
+            tags = list(tree.item(node_id, "tags"))
+            tags.append("bookmarked")
+            tree.item(node_id, tags=tags)
+
+        if selected:
+            selected_path_to_find = path
+
+    # Restore selection
+    if selected_path_to_find and selected_path_to_find in node_path_map:
+        target_id = node_path_map[selected_path_to_find]
+        tree.selection_set(target_id)
+        tree.focus(target_id)
+        tree.see(target_id)
+        on_tree_select(None)
+
+    refresh_bookmarks_cache()
+
+    set_mode("TREE")
+    select_tree()
+    
+    # Force tree column width to match loaded width (important for proper resizing)
+    tree.column("#0", width=tree_panel_width, minwidth=1)
+    
+    # Try to "unlock" the minimum by temporarily setting to a smaller width
+    tree.column("#0", width=50, minwidth=1)
+    window.update_idletasks()
+    
+    # Then set it back to the loaded width
+    tree.column("#0", width=tree_panel_width, minwidth=1)
+    window.update_idletasks()
+    
+    return True
 
 def format_table_command(event=None):
-    """
-    Handles the Ctrl+; keybinding to format selected text or current line as a table.
-    """
-    global editor
-    try:
-        if editor.tag_ranges("sel"):
-            # Get selected text and its start/end indices
-            start_index = editor.index("sel.first")
-            end_index = editor.index("sel.last")
-            selected_text = editor.get(start_index, end_index)
-            formatted_text = format_table(selected_text)
-            _replace_text_in_editor(start_index, end_index, formatted_text)
+    """Converts selected text to a formatted table or re-formats an existing one."""
+    
+    text_to_format = ""
+    start_idx = ""
+    end_idx = ""
+
+    if editor.tag_ranges("sel"):
+        start_idx = editor.index("sel.first")
+        end_idx = editor.index("sel.last")
+        text_to_format = editor.get(start_idx, end_idx)
+    else:
+        # If no text is selected, expand to a logical block around the cursor
+        block_start = editor.index("insert linestart")
+        block_end = editor.index("insert lineend")
+        
+        # Heuristic: Scan backwards for empty line or a non-table/non-table-input line
+        current_idx = editor.index("insert")
+        while str(editor.index(f"{current_idx} -1line")) != "1.0":
+            prev_line_content = editor.get(f"{current_idx} -1line linestart", f"{current_idx} -1line lineend")
+            if not prev_line_content.strip() or \
+               (not prev_line_content.strip().startswith('+') and \
+                not prev_line_content.strip().startswith('|') and \
+                not prev_line_content.strip().startswith('----')):
+                break
+            current_idx = editor.index(f"{current_idx} -1line linestart")
+        block_start = current_idx
+
+        current_idx = editor.index("insert")
+        while str(editor.index(f"{current_idx} +1line")) != editor.index("end"):
+            next_line_content = editor.get(f"{current_idx} +1line linestart", f"{current_idx} +1line lineend")
+            if not next_line_content.strip() or \
+               (not next_line_content.strip().startswith('+') and \
+                not next_line_content.strip().startswith('|') and \
+                not next_line_content.strip().startswith('----')):
+                break
+            current_idx = editor.index(f"{current_idx} +1line lineend")
+        block_end = current_idx
+        
+        text_to_format = editor.get(block_start, block_end)
+        start_idx = block_start
+        end_idx = block_end
+
+    if not text_to_format.strip():
+        show_msg("No text selected or identified as a table/table input.")
+        return
+
+    # Check if the text to format is already a formatted table
+    if is_formatted_table(text_to_format):
+        # Extract raw content from the formatted table
+        raw_content_for_reformat = _extract_raw_table_content(text_to_format)
+        if not raw_content_for_reformat.strip():
+            # If extraction failed or yielded empty, try formatting the original text directly
+            formatted_text = format_table(text_to_format)
         else:
-            # Get current line text and its start/end indices
-            start_index = editor.index("insert linestart")
-            end_index = editor.index("insert lineend")
-            current_line = editor.get(start_index, end_index)
-            # If the current line is just an empty header separator, we should format the whole document
-            if re.match(r'^-+\s*(\|?-+\s*)*\|?$', current_line.strip()):
-                full_text = editor.get("1.0", tk.END)
-                formatted_text = format_table(full_text)
-                editor.delete("1.0", tk.END)
-                editor.insert("1.0", formatted_text)
-            else:
-                formatted_text = format_table(current_line)
-                _replace_text_in_editor(start_index, end_index, formatted_text)
-        show_msg("Table formatted.")
-    except Exception as e:
-        show_msg(f"Error formatting table: {e}")
-        print(f"Error formatting table: {e}")
+            formatted_text = format_table(raw_content_for_reformat)
+    else:
+        # It's not a formatted table, so format it directly
+        formatted_text = format_table(text_to_format)
+
+    _replace_text_in_editor(start_idx, end_idx, formatted_text)
+    show_msg("Table formatted.")
 
 
 def main():
