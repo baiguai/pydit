@@ -703,7 +703,10 @@ def open_find_replace_dialog():
 
     # Key bindings
     find_replace_popup.bind("<Escape>", lambda e: close_find_replace_dialog(clear_selection=False))
-    find_entry.bind("<Return>", lambda e: (find_next_occurrence(find_text_var.get()), "break"))
+    def on_find_entry_return(event):
+        find_next_occurrence(find_text_var.get())
+        return "break"
+    find_entry.bind("<Return>", on_find_entry_return)
     replace_entry.bind("<Return>", lambda e: replace_occurrence(find_text_var.get(), replace_text_var.get()))
     replace_entry.bind("<Control-Return>", lambda e: replace_all_occurrences(find_text_var.get(), replace_text_var.get()))
 
@@ -745,7 +748,7 @@ def find_next_occurrence(find_text):
 
         # Configure tag for highlighting
         editor.tag_config("found", background="yellow", foreground="black")
-        editor.focus_set()
+        # editor.focus_set()
         set_mode("NORMAL")
     else:
         show_msg("No more occurrences found.")
