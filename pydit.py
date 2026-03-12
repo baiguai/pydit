@@ -725,6 +725,7 @@ def close_find_replace_dialog(event=None, clear_selection=True):
         find_replace_popup = None
         if clear_selection:
             editor.tag_remove("found", "1.0", tk.END) # Clear highlights
+    window.focus_force() # Ensure main window has focus
     editor.focus_set() # Return focus to note's text field
     set_mode("NORMAL") # Return to NORMAL mode
 
