@@ -721,7 +721,7 @@ def close_find_replace_dialog(event=None):
         find_replace_popup.destroy()
         find_replace_popup = None
         editor.tag_remove("found", "1.0", tk.END) # Clear highlights
-    window.focus_force() # Return focus to main window
+    editor.focus_set()
 
 def find_next_occurrence(find_text):
     global last_found_index
