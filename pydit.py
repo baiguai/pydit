@@ -762,8 +762,9 @@ def find_next_occurrence(find_text):
 
             # Configure tag for highlighting
             editor.tag_config("found", background="yellow", foreground="black")
-            editor.focus_set()
-            set_mode("NORMAL")
+            # Keep focus on the find_entry for repeated searches with Enter
+            # editor.focus_set() # Removed as per user request
+            # set_mode("NORMAL") # Removed as per user request
         else:
             show_msg("No occurrences found.")
 
