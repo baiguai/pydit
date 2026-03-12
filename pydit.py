@@ -22,6 +22,11 @@ pending_command = ""
 visual_start = None
 visual_mode = None  # "char" or "line"
 
+find_replace_popup = None
+find_text_var = None
+replace_text_var = None
+last_found_index = "1.0" # Start search from beginning of text
+
 tree_panel_width = 200
 last_directory = os.path.expanduser("~")  # Start with home directory
 config_file = os.path.join(os.path.expanduser("~"), ".pydit_config.json")
@@ -121,6 +126,7 @@ help_entries = [
     {"key": "Ctrl-r", "mode": "NORMAL", "description": "Redo last change"},
     {"key": "~", "mode": "NORMAL", "description": "Toggle case of character"},
     {"key": "D", "mode": "NORMAL", "description": "Delete to end of line"},
+    {"key": "f", "mode": "NORMAL", "description": "Open Find/Replace dialog"},
     {"key": "Ctrl+;", "mode": "INSERT/NORMAL", "description": "Converts the selected text to a table"},
     {"key": "Ctrl+-", "mode": "INSERT/NORMAL", "description": "Inserts a horizontal line (80 dashes)"},
 
@@ -640,6 +646,212 @@ def open_search():
     search_popup.bind("<Down>", lambda e: move_search_selection(1))
     search_popup.bind("<Up>", lambda e: move_search_selection(-1))
 
+# --- Find/Replace Dialog ---
+def open_find_replace_dialog():
+    global find_replace_popup, find_text_var, replace_text_var, last_found_index, find_entry, replace_entry
+
+    if find_replace_popup and find_replace_popup.winfo_exists():
+        find_replace_popup.lift() # Bring to front if already open
+        return
+
+    find_replace_popup = tk.Toplevel(window)
+    find_replace_popup.configure(bg="gray", bd=1, highlightthickness=1, highlightbackground="gray")
+    find_replace_popup.overrideredirect(True)
+    find_replace_popup.transient(window)
+    find_replace_popup.grab_set() # Grab all events until dialog is closed
+
+    # Center popup
+    win_x, win_y = window.winfo_rootx(), window.winfo_rooty()
+    win_w, win_h = window.winfo_width(), window.winfo_height()
+    width, height = 450, 150 # Adjusted size for two entry fields
+    x, y = win_x + (win_w - width)//2, win_y + (win_h - height)//2
+    find_replace_popup.geometry(f"{width}x{height}+{x}+{y}")
+
+    # Inner container
+    container = tk.Frame(find_replace_popup, bg="black")
+    container.pack(fill="both", expand=True, padx=4, pady=4)
+
+    # Find field
+    tk.Label(container, text="Find:", bg="black", fg="white", font=("Courier", 10)).grid(row=0, column=0, sticky="w", padx=2, pady=2)
+    find_text_var = tk.StringVar()
+    find_entry = tk.Entry(
+        container,
+        textvariable=find_text_var,
+        bg="black", fg="white", insertbackground="white", relief="flat",
+        highlightthickness=1, highlightbackground="gray", highlightcolor="white",
+        borderwidth=1, font=("Courier", 10)
+    )
+    find_entry.grid(row=0, column=1, sticky="ew", padx=2, pady=2)
+
+    # Replace field
+    tk.Label(container, text="Replace:", bg="black", fg="white", font=("Courier", 10)).grid(row=1, column=0, sticky="w", padx=2, pady=2)
+    replace_text_var = tk.StringVar()
+    replace_entry = tk.Entry(
+        container,
+        textvariable=replace_text_var,
+        bg="black", fg="white", insertbackground="white", relief="flat",
+        highlightthickness=1, highlightbackground="gray", highlightcolor="white",
+        borderwidth=1, font=("Courier", 10)
+    )
+    replace_entry.grid(row=1, column=1, sticky="ew", padx=2, pady=2)
+
+    container.grid_columnconfigure(1, weight=1) # Allow entry fields to expand
+
+    # Initial focus
+    find_entry.focus_set()
+    last_found_index = "1.0" # Reset search position
+
+    # Key bindings
+    find_replace_popup.bind("<Escape>", lambda e: close_find_replace_dialog(clear_selection=False))
+    def on_find_entry_return(event):
+        find_next_occurrence(find_text_var.get())
+        return "break"
+    find_entry.bind("<Return>", on_find_entry_return)
+    replace_entry.bind("<Return>", lambda e: replace_occurrence(find_text_var.get(), replace_text_var.get()))
+    replace_entry.bind("<Control-Return>", lambda e: replace_all_occurrences(find_text_var.get(), replace_text_var.get()))
+
+    # Tab navigation
+    find_entry.bind("<Tab>", lambda e: (replace_entry.focus_set(), "break"))
+    replace_entry.bind("<Tab>", lambda e: (find_entry.focus_set(), "break"))
+    find_entry.bind("<Shift-Tab>", lambda e: (replace_entry.focus_set(), "break"))
+    replace_entry.bind("<Shift-Tab>", lambda e: (find_entry.focus_set(), "break"))
+
+
+def close_find_replace_dialog(event=None, clear_selection=True):
+    global find_replace_popup
+    if find_replace_popup:
+        find_replace_popup.grab_release()
+        find_replace_popup.destroy()
+        find_replace_popup = None
+        if clear_selection:
+            editor.tag_remove("found", "1.0", tk.END) # Clear highlights
+    window.focus_force() # Ensure main window has focus
+    editor.focus_set() # Return focus to note's text field
+    set_mode("NORMAL") # Return to NORMAL mode
+
+def find_next_occurrence(find_text):
+    global last_found_index
+
+    editor.tag_remove("found", "1.0", tk.END) # Clear previous highlights
+
+    if not find_text:
+        return
+
+    start_pos = editor.search(find_text, last_found_index, stopindex=tk.END)
+
+    if start_pos:
+        end_pos = f"{start_pos}+{len(find_text)}c"
+        editor.tag_add("found", start_pos, end_pos)
+        editor.see(start_pos) # Scroll to found text
+        last_found_index = end_pos # Update for next search
+        editor.mark_set("insert", start_pos) # Move cursor to start of found text
+        editor.mark_set("current", start_pos)
+
+        # Configure tag for highlighting
+        editor.tag_config("found", background="yellow", foreground="black")
+        # editor.focus_set()
+        set_mode("NORMAL")
+    else:
+        show_msg("No more occurrences found.")
+        last_found_index = "1.0" # Reset for search from beginning
+        # Try again from the beginning of the text
+        start_pos = editor.search(find_text, last_found_index, stopindex=tk.END)
+        if start_pos:
+            end_pos = f"{start_pos}+{len(find_text)}c"
+            editor.tag_add("found", start_pos, end_pos)
+            editor.see(start_pos) # Scroll to found text
+            last_found_index = end_pos # Update for next search
+            editor.mark_set("insert", start_pos) # Move cursor to start of found text
+            editor.mark_set("current", start_pos)
+
+            # Configure tag for highlighting
+            editor.tag_config("found", background="yellow", foreground="black")
+            # Keep focus on the find_entry for repeated searches with Enter
+            # editor.focus_set() # Removed as per user request
+            # set_mode("NORMAL") # Removed as per user request
+        else:
+            show_msg("No occurrences found.")
+
+
+def replace_occurrence(find_text, replace_text):
+    if not find_text:
+        return
+    
+    # Check if there's an active selection that matches find_text
+    if editor.tag_ranges("found"):
+        start = editor.index("found.first")
+        end = editor.index("found.last")
+        
+        # Verify the selected text actually matches the find_text
+        if editor.get(start, end) == find_text:
+            editor.delete(start, end)
+            editor.insert(start, replace_text)
+            
+            # Select the replaced text
+            editor.tag_remove("found", "1.0", tk.END)
+            new_end = f"{start}+{len(replace_text)}c"
+            editor.tag_add("found", start, new_end)
+            editor.see(start)
+            editor.mark_set("insert", new_end) # Place cursor after replaced text
+            editor.mark_set("current", new_end) # Place cursor after replaced text
+
+            close_find_replace_dialog()
+            return
+
+    # If no matching selection or current selection doesn't match, find the next one
+    find_next_occurrence(find_text)
+    if editor.tag_ranges("found"):
+        start = editor.index("found.first")
+        end = editor.index("found.last")
+        editor.delete(start, end)
+        editor.insert(start, replace_text)
+        
+        # Select the replaced text
+        editor.tag_remove("found", "1.0", tk.END)
+        new_end = f"{start}+{len(replace_text)}c"
+        editor.tag_add("found", start, new_end)
+        editor.see(start)
+        editor.mark_set("insert", new_end) # Place cursor after replaced text
+        editor.mark_set("current", new_end) # Place cursor after replaced text
+    
+    close_find_replace_dialog()
+    show_msg("Replaced one occurrence.")
+
+def replace_all_occurrences(find_text, replace_text):
+    if not find_text:
+        return
+
+    editor.undo_stack_depth = 0 # Temporarily disable undo/redo for this bulk operation
+    count = 0
+    start_pos = "1.0"
+    
+    editor.tag_remove("found", "1.0", tk.END)
+
+    while True:
+        start_pos = editor.search(find_text, start_pos, stopindex=tk.END)
+        if not start_pos:
+            break
+        
+        end_pos = f"{start_pos}+{len(find_text)}c"
+        editor.delete(start_pos, end_pos)
+        editor.insert(start_pos, replace_text)
+        
+        # Adjust start_pos for the next search, considering the new length of replaced_text
+        start_pos = f"{start_pos}+{len(replace_text)}c"
+        count += 1
+    
+    # Select the last replaced text
+    if count > 0:
+        editor.tag_add("found", f"{start_pos}-{len(replace_text)}c", start_pos)
+        editor.see(f"{start_pos}-{len(replace_text)}c")
+        editor.mark_set("insert", start_pos)
+        editor.mark_set("current", start_pos)
+        editor.tag_config("found", background="yellow", foreground="black")
+
+    editor.undo_stack_depth = -1 # Re-enable undo/redo
+    close_find_replace_dialog()
+    show_msg(f"Replaced {count} occurrences.")
+
 def update_search_results(*args):
     global search_results
 
@@ -697,7 +909,7 @@ def confirm_search_selection(event=None):
 
     # Focus and select the node
     tree.selection_set(item_id)
-    tree.focus(item_id)
+    # tree.focus(item_id)
     tree.see(item_id)
     on_tree_select(None)
 
@@ -2103,6 +2315,9 @@ def on_editor_key(event):
                 return "break"
             elif key == "D":
                 delete_to_line_end()
+                return "break"
+            elif key == "f":
+                open_find_replace_dialog()
                 return "break"
 
         # Handle multi-key combos
