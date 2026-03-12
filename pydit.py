@@ -703,7 +703,7 @@ def open_find_replace_dialog():
 
     # Key bindings
     find_replace_popup.bind("<Escape>", lambda e: close_find_replace_dialog(clear_selection=False))
-    find_entry.bind("<Return>", lambda e: find_next_occurrence(find_text_var.get()))
+    find_entry.bind("<Return>", lambda e: (find_next_occurrence(find_text_var.get()), "break"))
     replace_entry.bind("<Return>", lambda e: replace_occurrence(find_text_var.get(), replace_text_var.get()))
     replace_entry.bind("<Control-Return>", lambda e: replace_all_occurrences(find_text_var.get(), replace_text_var.get()))
 
@@ -905,7 +905,7 @@ def confirm_search_selection(event=None):
 
     # Focus and select the node
     tree.selection_set(item_id)
-    tree.focus(item_id)
+    # tree.focus(item_id)
     tree.see(item_id)
     on_tree_select(None)
 
