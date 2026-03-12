@@ -702,7 +702,7 @@ def open_find_replace_dialog():
     last_found_index = "1.0" # Reset search position
 
     # Key bindings
-    find_replace_popup.bind("<Escape>", close_find_replace_dialog)
+    find_replace_popup.bind("<Escape>", lambda e: close_find_replace_dialog(clear_selection=False))
     find_entry.bind("<Return>", lambda e: find_next_occurrence(find_text_var.get()))
     replace_entry.bind("<Return>", lambda e: replace_occurrence(find_text_var.get(), replace_text_var.get()))
     replace_entry.bind("<Control-Return>", lambda e: replace_all_occurrences(find_text_var.get(), replace_text_var.get()))
@@ -714,14 +714,16 @@ def open_find_replace_dialog():
     replace_entry.bind("<Shift-Tab>", lambda e: (find_entry.focus_set(), "break"))
 
 
-def close_find_replace_dialog(event=None):
+def close_find_replace_dialog(event=None, clear_selection=True):
     global find_replace_popup
     if find_replace_popup:
         find_replace_popup.grab_release()
         find_replace_popup.destroy()
         find_replace_popup = None
-        editor.tag_remove("found", "1.0", tk.END) # Clear highlights
-    editor.focus_set()
+        if clear_selection:
+            editor.tag_remove("found", "1.0", tk.END) # Clear highlights
+    editor.focus_set() # Return focus to note's text field
+    set_mode("NORMAL") # Return to NORMAL mode
 
 def find_next_occurrence(find_text):
     global last_found_index
@@ -743,6 +745,8 @@ def find_next_occurrence(find_text):
 
         # Configure tag for highlighting
         editor.tag_config("found", background="yellow", foreground="black")
+        editor.focus_set()
+        set_mode("NORMAL")
     else:
         show_msg("No more occurrences found.")
         last_found_index = "1.0" # Reset for search from beginning
@@ -758,6 +762,8 @@ def find_next_occurrence(find_text):
 
             # Configure tag for highlighting
             editor.tag_config("found", background="yellow", foreground="black")
+            editor.focus_set()
+            set_mode("NORMAL")
         else:
             show_msg("No occurrences found.")
 
