@@ -5,6 +5,15 @@ import csv
 import re, os, webbrowser
 import json
 import sys
+import datetime
+
+# Debug logging to file
+def debug_log(message):
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open("pydit_debug.log", "a") as f:
+        f.write(f"[{timestamp}] {message}\n")
+
+
 
 current_file = None
 last_key = ""
@@ -32,6 +41,7 @@ last_directory = os.path.expanduser("~")  # Start with home directory
 config_file = os.path.join(os.path.expanduser("~"), ".pydit_config.json")
 
 
+
 # Directory persistence functions
 def load_config():
     """Load configuration including last used directory and file."""
@@ -48,18 +58,32 @@ def load_config():
         current_file = None
 
 def save_config():
+
     """Save configuration including last used directory and file."""
+
     try:
+
         config = {
+
             'last_directory': last_directory,
+
             'last_file': current_file
+
         }
+
         with open(config_file, 'w') as f:
+
             json.dump(config, f)
+
     except Exception:
+
         pass
-last_directory = os.path.expanduser("~")  # Start with home directory
-config_file = os.path.join(os.path.expanduser("~"), ".pydit_config.json")
+
+
+
+
+
+
 
 
 
@@ -2660,9 +2684,12 @@ def silent_load_file(filepath):
     node_path_map = {}
     global tree_panel_width
 
-    with open(filepath, newline='', encoding='utf-8') as f:
-        reader = csv.DictReader(f)
-        rows = list(reader)
+    try:
+        with open(filepath, newline='', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+    except Exception as e:
+        return False # Handle potential file reading errors
 
     # Load tree width from first row if available
     tree_width_loaded = False
@@ -2759,33 +2786,45 @@ def format_table_command(event=None):
         end_idx = editor.index("sel.last")
         text_to_format = editor.get(start_idx, end_idx)
     else:
-        # If no text is selected, expand to a logical block around the cursor
-        block_start_candidate = editor.index("insert linestart")
-        current_idx = editor.index("insert")
+        # If no selection, find the table block around the cursor
         
-        # Scan backwards for an empty line or a non-table related line to find the start of the block
-        while str(editor.index(f"{block_start_candidate} -1line")) != "1.0":
-            prev_line_content = editor.get(f"{block_start_candidate} -1line linestart", f"{block_start_candidate} -1line lineend")
+        # Find block start by scanning upwards
+        block_start = editor.index("insert linestart")
+        while True:
+            # Check if we are at the first line
+            if editor.compare(block_start, "==", "1.0"):
+                break
+
+            prev_line_start = editor.index(f"{block_start} -1line")
+            prev_line_content = editor.get(prev_line_start, f"{prev_line_start} lineend")
+
             if not prev_line_content.strip() or \
                (not '|' in prev_line_content and not prev_line_content.strip().startswith('----')):
-                break
-            block_start_candidate = editor.index(f"{block_start_candidate} -1line linestart")
-        block_start = block_start_candidate
+                break # Found a non-table line, so stop
+                
+            block_start = prev_line_start
 
-        # Scan forwards for an empty line or a non-table related line to find the end of the block
-        block_end_candidate = editor.index("insert lineend")
-        block_end_marker = editor.index("end")
-        while str(editor.index(f"{block_end_candidate} +1line")) != block_end_marker:
-            next_line_content = editor.get(f"{block_end_candidate} +1line linestart", f"{block_end_candidate} +1line lineend")
+        # Find block end by scanning downwards
+        block_end = editor.index("insert lineend")
+        while True:
+            next_line_start = editor.index(f"{block_end} +1line")
+            
+            # If next_line_start is the same as block_end lineend, we're at the end.
+            # A more robust check is to see if we're past the end of the buffer.
+            if editor.compare(next_line_start, ">=", "end-1c"):
+                break
+
+            next_line_content = editor.get(next_line_start, f"{next_line_start} lineend")
+            
             if not next_line_content.strip() or \
                (not '|' in next_line_content and not next_line_content.strip().startswith('----')):
-                break
-            block_end_candidate = editor.index(f"{block_end_candidate} +1line lineend")
-        block_end = block_end_candidate
-        
-        text_to_format = editor.get(block_start, block_end)
+                break # Found a non-table line, so stop
+
+            block_end = editor.index(f"{next_line_start} lineend")
+
         start_idx = block_start
         end_idx = block_end
+        text_to_format = editor.get(start_idx, end_idx)
 
     if not text_to_format.strip():
         show_msg("No text selected or identified as a table/table input.")
@@ -2798,7 +2837,6 @@ def format_table_command(event=None):
 
 
 def main():
-    print("DEBUG: main() started")
     global tree, editor, mode_label, msg_label, window, quitting
 
     # Load configuration including last directory
@@ -2857,9 +2895,11 @@ def main():
     if current_file and os.path.exists(current_file):
         silent_load_file(current_file)
     
-    print("DEBUG: Calling window.mainloop()")
     window.mainloop()
-    print("DEBUG: window.mainloop() returned")
+debug_log("DEBUG: Global scope: End of definitions, before __main__ check")
+
+__name__ = "__main__" # DEBUGGING HACK: Force __name__ to be "__main__"
 
 if __name__ == "__main__":
+    debug_log("DEBUG: __main__ block entered")
     main()
