@@ -2784,7 +2784,14 @@ def format_table_command(event=None):
     if editor.tag_ranges("sel"):
         start_idx = editor.index("sel.first")
         end_idx = editor.index("sel.last")
+        # Adjust end_idx to include trailing newline if the selection doesn't already
+        if editor.get(end_idx) == "\n": # If selection ends at beginning of newline
+            end_idx = editor.index(f"{end_idx} +1c")
+        elif editor.compare(editor.index(f"{end_idx} lineend"), "==", end_idx): # If selection ends at lineend, but not at end of file
+            end_idx = editor.index(f"{end_idx} +1c")
+        
         text_to_format = editor.get(start_idx, end_idx)
+
     else:
         # If no selection, find the table block around the cursor
         
@@ -2805,38 +2812,40 @@ def format_table_command(event=None):
             block_start = prev_line_start
 
         # Find block end by scanning downwards
-        block_end = editor.index("insert lineend")
-        while True:
-            next_line_start = editor.index(f"{block_end} +1line")
-            
-            # If next_line_start is the same as block_end lineend, we're at the end.
-            # A more robust check is to see if we're past the end of the buffer.
-            if editor.compare(next_line_start, ">=", "end-1c"):
-                break
+        # Start at the end of the current line, including its newline
+        block_end_candidate = editor.index("insert lineend +1c") # Start of the line *after* the current line
 
-            next_line_content = editor.get(next_line_start, f"{next_line_start} lineend")
+        while True:
+            # Check if we're at the very end of the buffer
+            if editor.compare(block_end_candidate, "==", "end"):
+                break # Reached the end of the text widget
+
+            current_line_start_in_scan = block_end_candidate # This is the start of the line being checked in the loop
+            current_line_content = editor.get(current_line_start_in_scan, f"{current_line_start_in_scan} lineend")
             
-            if not next_line_content.strip() or \
-               (not '|' in next_line_content and not next_line_content.strip().startswith('----')):
+            if not current_line_content.strip() or \
+               (not '|' in current_line_content and not current_line_content.strip().startswith('----')):
                 break # Found a non-table line, so stop
 
-            block_end = editor.index(f"{next_line_start} lineend")
+            # Move block_end_candidate to the start of the next line (including current line's newline)
+            block_end_candidate = editor.index(f"{current_line_start_in_scan} lineend +1c")
 
+        end_idx = block_end_candidate # This is the insertion point, exclusive
         start_idx = block_start
-        end_idx = block_end
         text_to_format = editor.get(start_idx, end_idx)
 
     if not text_to_format.strip():
         show_msg("No text selected or identified as a table/table input.")
         return
 
-    formatted_text = format_table(text_to_format)
+    formatted_text = "\n"+format_table(text_to_format)
 
     _replace_text_in_editor(start_idx, end_idx, formatted_text)
     show_msg("Table formatted.")
 
 
 def main():
+    debug_log("DEBUG: main() started")
     global tree, editor, mode_label, msg_label, window, quitting
 
     # Load configuration including last directory
@@ -2892,13 +2901,16 @@ def main():
     tree.bind("<Button-1>", on_tree_click)
 
     # Auto-open last file if it exists
+    debug_log(f"DEBUG: current_file: {current_file}, exists: {os.path.exists(current_file) if current_file else 'N/A'}")
     if current_file and os.path.exists(current_file):
+        debug_log("DEBUG: Calling silent_load_file")
         silent_load_file(current_file)
+        debug_log("DEBUG: silent_load_file returned")
     
+    debug_log("DEBUG: Calling window.mainloop()")
     window.mainloop()
+    debug_log("DEBUG: window.mainloop() returned")
 debug_log("DEBUG: Global scope: End of definitions, before __main__ check")
-
-__name__ = "__main__" # DEBUGGING HACK: Force __name__ to be "__main__"
 
 if __name__ == "__main__":
     debug_log("DEBUG: __main__ block entered")
