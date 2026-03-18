@@ -5,6 +5,15 @@ import csv
 import re, os, webbrowser
 import json
 import sys
+import datetime
+
+# Debug logging to file
+def debug_log(message):
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open("pydit_debug.log", "a") as f:
+        f.write(f"[{timestamp}] {message}\n")
+
+
 
 current_file = None
 last_key = ""
@@ -32,6 +41,7 @@ last_directory = os.path.expanduser("~")  # Start with home directory
 config_file = os.path.join(os.path.expanduser("~"), ".pydit_config.json")
 
 
+
 # Directory persistence functions
 def load_config():
     """Load configuration including last used directory and file."""
@@ -48,18 +58,32 @@ def load_config():
         current_file = None
 
 def save_config():
+
     """Save configuration including last used directory and file."""
+
     try:
+
         config = {
+
             'last_directory': last_directory,
+
             'last_file': current_file
+
         }
+
         with open(config_file, 'w') as f:
+
             json.dump(config, f)
+
     except Exception:
+
         pass
-last_directory = os.path.expanduser("~")  # Start with home directory
-config_file = os.path.join(os.path.expanduser("~"), ".pydit_config.json")
+
+
+
+
+
+
 
 
 
@@ -127,7 +151,7 @@ help_entries = [
     {"key": "~", "mode": "NORMAL", "description": "Toggle case of character"},
     {"key": "D", "mode": "NORMAL", "description": "Delete to end of line"},
     {"key": "f", "mode": "NORMAL", "description": "Open Find/Replace dialog"},
-    {"key": "Ctrl+;", "mode": "INSERT/NORMAL", "description": "Converts the selected text to a table"},
+    {"key": "Ctrl+;", "mode": "INSERT/NORMAL", "description": "Create/Update table"},
     {"key": "Ctrl+-", "mode": "INSERT/NORMAL", "description": "Inserts a horizontal line (80 dashes)"},
 
     # --- VISUAL MODE ---
@@ -440,140 +464,114 @@ def open_links_dialog():
 # Table Formatter
 def format_table(text):
     """
-    Formats the given text into an ASCII table.
-    Handles pipe-separated, whitespace-separated, and markdown-style tables.
-    Automatically calculates column widths and adds proper borders.
-    Detects manual header separators (`----`) to draw a `+===+` line.
+    Formats the given text into a Markdown-style ASCII table.
+    Replicates the logic from httree.html's formatMarkdownTable function.
     """
-    lines = [line.strip() for line in text.strip().split('\n')]
+    if not '|' in text:
+        return text # No pipe found, not a table
     
-    if not lines:
+    # Get selection or current line if none
+    raw_lines = text.strip().split('\n')
+    if not raw_lines:
         return text
 
-    # Define a sentinel for row separators
-    ROW_SEPARATOR = ['__SEPARATOR__']
+    # Matches:
+    #   | ---- | ---- |   (old markdown style)
+    #   +------+------+
+    #   ----             (plain)
+    divider_pattern = re.compile(r'^\s*(?:[|+]\s*-+\s*(?:[|+]\s*-+\s*)*[|+]|-+)\s*$')
 
-    # --- Pass 1: Parse all lines into a structured list of cells ---
-    all_rows = []
-    has_header_separator = False
+    has_divider = any(divider_pattern.search(line) for line in raw_lines)
 
-    for i, line in enumerate(lines):
-        if not line.strip():
-            continue
+    # Filter out dividers for measuring widths
+    content_lines = [line for line in raw_lines if not divider_pattern.search(line)]
+    if not content_lines:
+        return text
 
-        # Explicit row separator '----' on its own line
-        if line.strip() == '----':
-            all_rows.append(ROW_SEPARATOR)
-            continue
-
-        # Markdown-style header separator: |---|---| or --- --- --- or |:---|:---|
-        is_potential_header_separator = all(c in '-:| ' for c in line) and any(c == '-' for c in line)
+    # Parse rows into cells
+    table = []
+    for line in content_lines:
+        # Split by '|' and remove empty strings from start/end if they result from leading/trailing pipes
+        cells = [c.strip() for c in line.split('|')]
+        if line.startswith('|'):
+            cells = cells[1:]
+        if line.endswith('|') and len(cells) > 0:
+            cells = cells[:-1]
         
-        if is_potential_header_separator:
-            # We are looking for a true header separator, which means there should have been
-            # content rows before this line that can act as a header.
-            # `all_rows` will contain only actual content cells or ROW_SEPARATORs at this point.
-            # If all_rows is not empty and the last added item was not a ROW_SEPARATOR,
-            # then the line before this separator can be considered a header.
-            if all_rows and all_rows[-1] != ROW_SEPARATOR:
-                has_header_separator = True
-                continue # Skip adding the separator line to all_rows
+        # Ensure cells are not completely empty if they were just whitespace
+        cells = [c if c else '' for c in cells]
+        table.append(cells)
 
-
-        # Regular data row
-        cells = []
-        # Pipe-separated, including lines that start/end with pipes
-        if '|' in line:
-            # Strip leading/trailing pipes and then split
-            processed_line = line
-            if processed_line.startswith('|'): processed_line = processed_line[1:]
-            if processed_line.endswith('|'): processed_line = processed_line[:-1]
-            cells = [cell.strip() for cell in processed_line.split('|')]
-        # Fallback to whitespace-separated (2+ spaces)
-        else:
-            cells = [cell.strip() for cell in re.split(r'\s{2,}', line) if cell.strip()]
-        
-        if cells:
-            all_rows.append(cells)
-
-    # Filter out any empty rows that might have been added
-    all_rows = [row for row in all_rows if row]
+    # Determine the maximum number of columns across all rows
+    num_columns = 0
+    if table:
+        num_columns = max(len(row) for row in table)
     
-    if not all_rows:
-        return text
-
-    # --- Pass 2: Separate header and data, calculate column widths ---
-    header_rows = []
-    data_rows = []
-
-    if has_header_separator:
-        # Find the first non-separator row and treat it as the header
-        first_content_row_idx = -1
-        for i, row in enumerate(all_rows):
-            if row != ROW_SEPARATOR:
-                first_content_row_idx = i
-                break
-        
-        if first_content_row_idx != -1:
-            # Header is the first line of content
-            header_rows = [all_rows[first_content_row_idx]]
-            # Data is everything after
-            data_rows = all_rows[first_content_row_idx + 1:]
-        else: # No content rows found
-            data_rows = all_rows
-    else:
-        data_rows = all_rows
-
-    # Calculate column widths from all non-separator rows
-    content_for_width_calc = [row for row in all_rows if row != ROW_SEPARATOR]
-    if not content_for_width_calc:
-        return text
-
-    num_columns = max(len(row) for row in content_for_width_calc) if content_for_width_calc else 0
-    col_widths = [0] * num_columns
-    for row in content_for_width_calc:
-        # Pad rows that have fewer columns
+    # Pad rows to ensure consistent column count for width calculation
+    for row in table:
         while len(row) < num_columns:
             row.append('')
+
+    # Compute max width per column
+    widths = [0] * num_columns
+    for row in table:
         for i, cell in enumerate(row):
-            col_widths[i] = max(col_widths[i], len(cell))
+            widths[i] = max(widths[i], len(cell))
 
-    # --- Pass 3: Build the formatted table string ---
-    def make_line(char="-"):
-        return "+" + "+".join(char * (w + 2) for w in col_widths) + "+"
+    # Build ASCII-style separator
+    def make_sep():
+        return "+" + "+".join("-" * (w + 2) for w in widths) + "+"
 
-    output = []
-    # Top border
-    output.append(make_line())
+    # Build padded table rows
+    padded = []
+    for row in table:
+        padded_cells = []
+        for i, cell in enumerate(row):
+            trimmed = cell.strip()
+            pad = widths[i] - len(trimmed)
+            padded_cells.append(" " + trimmed + " " * pad + " ")
+        padded.append("|" + "|".join(padded_cells) + "|")
 
-    # Header
-    if header_rows:
-        for row in header_rows:
-            padded_cells = [cell.ljust(col_widths[i]) for i, cell in enumerate(row)]
-            output.append("| " + " | ".join(padded_cells) + " |")
-        # Header/data separator
-        output.append(make_line("="))
-    
-    # Data
-    for row in data_rows:
-        if row == ROW_SEPARATOR:
-            # Only add a separator line if the output is not empty and the last line isn't already a separator
-            if output and output[-1] != make_line():
-                output.append(make_line())
+    # Rebuild all lines: regenerate every separator, reformat all content
+    final_rows = []
+    row_index = 0
+
+    for line in raw_lines:
+        if divider_pattern.search(line):
+            # Always rebuild separator lines
+            final_rows.append(make_sep())
+        elif row_index < len(padded):
+            # Replace content rows with padded versions
+            final_rows.append(padded[row_index])
+            row_index += 1
         else:
-            # Pad rows with fewer columns before formatting
-            while len(row) < num_columns:
-                row.append('')
-            padded_cells = [cell.ljust(col_widths[i]) for i, cell in enumerate(row)]
-            output.append("| " + " | ".join(padded_cells) + " |")
+            # If there are extra non-divider lines beyond the table content, preserve them
+            final_rows.append(line)
 
-    # Only add bottom border if the output is not empty and the last line isn't already a border
-    if output and output[-1] != make_line():
-        output.append(make_line())
-    elif not output and (header_rows or data_rows): # Handle case where table might be empty but still needs borders
-        output.append(make_line())
 
-    return "\n".join(output)
+    # If no dividers were present at all, just output the padded content
+    if not has_divider:
+        # Check if table was empty initially, then add default separator
+        if not table:
+            # If no content lines at all, but there was *some* text and pipes detected,
+            # we should still produce a valid empty table structure.
+            # Assume 2 columns as a default if no content lines to infer from.
+            if not widths:
+                widths = [5, 5] # Default widths for an empty table
+            empty_sep = "+" + "+".join("-" * (w + 2) for w in widths) + "+"
+            final_rows = [empty_sep, empty_sep]
+        else:
+            final_rows = [padded[0]] # First content row
+            final_rows.append(make_sep()) # Add separator after first row as header
+            final_rows.extend(padded[1:]) # Rest of the content rows
+            final_rows.append(make_sep()) # Final separator
+
+
+    # Ensure there's a blank line at the end if the original had one or if it's new
+    if final_rows and not final_rows[-1].endswith('\n'):
+        final_rows.append('') # Add a newline if not present
+
+    return "\n".join(final_rows)
 
 
 
@@ -1856,76 +1854,7 @@ def _replace_text_in_editor(start_index, end_index, new_text):
     editor.delete(start_index, end_index)
     editor.insert(start_index, new_text)
 
-# Helper functions for table formatting
-def is_formatted_table(text):
-    """
-    Checks if the given text looks like an already formatted ASCII table.
-    Heuristic: presence of top/bottom borders ('+') and content rows ('|').
-    """
-    lines = text.strip().split('\n')
-    if len(lines) < 3: # Needs at least top border, one content row, bottom border
-        return False
-    
-    # Check first line for top border
-    if not (lines[0].startswith('+') and all(c in '+-' for c in lines[0])):
-        return False
-        
-    # Check last line for bottom border
-    if not (lines[-1].startswith('+') and all(c in '+-' for c in lines[-1])):
-        return False
-        
-    # Check for content lines (at least one)
-    has_content = False
-    for line in lines[1:-1]: # Exclude first and last lines
-        if line.strip().startswith('|') and '|' in line:
-            has_content = True
-            break
-            
-    return has_content
 
-def _extract_raw_table_content(formatted_table_text):
-    """
-    Extracts raw pipe-separated content and infers '----' separators from an
-    already formatted ASCII table.
-    """
-    lines = formatted_table_text.strip().split('\n')
-    raw_content_lines = []
-    
-    # Helper to check if a line is a horizontal rule (border or separator)
-    def is_horizontal_rule(line_str):
-        return line_str.startswith('+') and all(c in '+-=' for c in line_str)
-
-    # Process lines
-    for i, line in enumerate(lines):
-        stripped_line = line.strip()
-        if not stripped_line:
-            continue
-
-        if is_horizontal_rule(stripped_line):
-            # If it's an internal horizontal rule (not the absolute first or last),
-            # re-insert a '----' separator.
-            # This logic needs to be careful not to add '----' for the header separator (====)
-            # or for the outermost table borders.
-            # A simple heuristic: if it's a '-' based border and not the very first line,
-            # and the previous raw content wasn't already a '----'.
-            if stripped_line.startswith('+-') and i > 0 and raw_content_lines and raw_content_lines[-1] != '----':
-                raw_content_lines.append("---- ")
-            continue
-        
-        if stripped_line.startswith('|') and stripped_line.endswith('|'):
-            # Extract content from inside the pipes
-            # Split by '|' and strip each cell, then join back with '|'
-            cells = [cell.strip() for cell in stripped_line[1:-1].split('|')]
-            raw_content_lines.append("|".join(cells))
-            
-    # Clean up any potential leading/trailing '----' that might have been
-    # incorrectly inferred from the outermost borders if the heuristics weren't perfect.
-    if raw_content_lines and raw_content_lines[0] == '---- ':
-        raw_content_lines.pop(0)
-    if raw_content_lines and raw_content_lines[-1] == '---- ':
-        raw_content_lines.pop(-1)
-
-    return "\n".join(raw_content_lines)
 
 # Visual Helpers
 def start_visual_mode(kind="char"):
@@ -2755,9 +2684,12 @@ def silent_load_file(filepath):
     node_path_map = {}
     global tree_panel_width
 
-    with open(filepath, newline='', encoding='utf-8') as f:
-        reader = csv.DictReader(f)
-        rows = list(reader)
+    try:
+        with open(filepath, newline='', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+    except Exception as e:
+        return False # Handle potential file reading errors
 
     # Load tree width from first row if available
     tree_width_loaded = False
@@ -2852,61 +2784,68 @@ def format_table_command(event=None):
     if editor.tag_ranges("sel"):
         start_idx = editor.index("sel.first")
         end_idx = editor.index("sel.last")
+        # Adjust end_idx to include trailing newline if the selection doesn't already
+        if editor.get(end_idx) == "\n": # If selection ends at beginning of newline
+            end_idx = editor.index(f"{end_idx} +1c")
+        elif editor.compare(editor.index(f"{end_idx} lineend"), "==", end_idx): # If selection ends at lineend, but not at end of file
+            end_idx = editor.index(f"{end_idx} +1c")
+        
         text_to_format = editor.get(start_idx, end_idx)
-    else:
-        # If no text is selected, expand to a logical block around the cursor
-        block_start = editor.index("insert linestart")
-        block_end = editor.index("insert lineend")
-        
-        # Heuristic: Scan backwards for empty line or a non-table/non-table-input line
-        current_idx = editor.index("insert")
-        while str(editor.index(f"{current_idx} -1line")) != "1.0":
-            prev_line_content = editor.get(f"{current_idx} -1line linestart", f"{current_idx} -1line lineend")
-            if not prev_line_content.strip() or \
-               (not prev_line_content.strip().startswith('+') and \
-                not prev_line_content.strip().startswith('|') and \
-                not prev_line_content.strip().startswith('----')):
-                break
-            current_idx = editor.index(f"{current_idx} -1line linestart")
-        block_start = current_idx
 
-        current_idx = editor.index("insert")
-        while str(editor.index(f"{current_idx} +1line")) != editor.index("end"):
-            next_line_content = editor.get(f"{current_idx} +1line linestart", f"{current_idx} +1line lineend")
-            if not next_line_content.strip() or \
-               (not next_line_content.strip().startswith('+') and \
-                not next_line_content.strip().startswith('|') and \
-                not next_line_content.strip().startswith('----')):
-                break
-            current_idx = editor.index(f"{current_idx} +1line lineend")
-        block_end = current_idx
+    else:
+        # If no selection, find the table block around the cursor
         
-        text_to_format = editor.get(block_start, block_end)
+        # Find block start by scanning upwards
+        block_start = editor.index("insert linestart")
+        while True:
+            # Check if we are at the first line
+            if editor.compare(block_start, "==", "1.0"):
+                break
+
+            prev_line_start = editor.index(f"{block_start} -1line")
+            prev_line_content = editor.get(prev_line_start, f"{prev_line_start} lineend")
+
+            if not prev_line_content.strip() or \
+               (not '|' in prev_line_content and not prev_line_content.strip().startswith('----')):
+                break # Found a non-table line, so stop
+                
+            block_start = prev_line_start
+
+        # Find block end by scanning downwards
+        # Start at the end of the current line, including its newline
+        block_end_candidate = editor.index("insert lineend +1c") # Start of the line *after* the current line
+
+        while True:
+            # Check if we're at the very end of the buffer
+            if editor.compare(block_end_candidate, "==", "end"):
+                break # Reached the end of the text widget
+
+            current_line_start_in_scan = block_end_candidate # This is the start of the line being checked in the loop
+            current_line_content = editor.get(current_line_start_in_scan, f"{current_line_start_in_scan} lineend")
+            
+            if not current_line_content.strip() or \
+               (not '|' in current_line_content and not current_line_content.strip().startswith('----')):
+                break # Found a non-table line, so stop
+
+            # Move block_end_candidate to the start of the next line (including current line's newline)
+            block_end_candidate = editor.index(f"{current_line_start_in_scan} lineend +1c")
+
+        end_idx = block_end_candidate # This is the insertion point, exclusive
         start_idx = block_start
-        end_idx = block_end
+        text_to_format = editor.get(start_idx, end_idx)
 
     if not text_to_format.strip():
         show_msg("No text selected or identified as a table/table input.")
         return
 
-    # Check if the text to format is already a formatted table
-    if is_formatted_table(text_to_format):
-        # Extract raw content from the formatted table
-        raw_content_for_reformat = _extract_raw_table_content(text_to_format)
-        if not raw_content_for_reformat.strip():
-            # If extraction failed or yielded empty, try formatting the original text directly
-            formatted_text = format_table(text_to_format)
-        else:
-            formatted_text = format_table(raw_content_for_reformat)
-    else:
-        # It's not a formatted table, so format it directly
-        formatted_text = format_table(text_to_format)
+    formatted_text = "\n"+format_table(text_to_format)
 
     _replace_text_in_editor(start_idx, end_idx, formatted_text)
     show_msg("Table formatted.")
 
 
 def main():
+    debug_log("DEBUG: main() started")
     global tree, editor, mode_label, msg_label, window, quitting
 
     # Load configuration including last directory
@@ -2962,12 +2901,17 @@ def main():
     tree.bind("<Button-1>", on_tree_click)
 
     # Auto-open last file if it exists
+    debug_log(f"DEBUG: current_file: {current_file}, exists: {os.path.exists(current_file) if current_file else 'N/A'}")
     if current_file and os.path.exists(current_file):
+        debug_log("DEBUG: Calling silent_load_file")
         silent_load_file(current_file)
+        debug_log("DEBUG: silent_load_file returned")
     
-# Tree column width is now controlled by tree.column() only
-
+    debug_log("DEBUG: Calling window.mainloop()")
     window.mainloop()
+    debug_log("DEBUG: window.mainloop() returned")
+debug_log("DEBUG: Global scope: End of definitions, before __main__ check")
 
 if __name__ == "__main__":
+    debug_log("DEBUG: __main__ block entered")
     main()
